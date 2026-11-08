@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block titulo %}Entrar · Última Volta Brasil{% endblock %}
+{% block conteudo %}
+<section class="caixa-login">
+  <h1>Entrar</h1>
+  <p class="sub">Acesso de alunos e instrutores</p>
+  {% for msg in get_flashed_messages() %}<div class="alerta">{{ msg }}</div>{% endfor %}
+  <form method="post">
+    <input type="hidden" name="csrf" value="{{ csrf_token }}">
+    <label>E-mail
+      <input type="email" name="email" required autofocus autocomplete="username" value="{{ request.form.email or '' }}">
+    </label>
+    <label>Senha
+      <input type="password" name="senha" required autocomplete="current-password">
+    </label>
+    <button class="btn btn-grande" type="submit">Entrar</button>
+  </form>
+</section>
+{% endblock %}

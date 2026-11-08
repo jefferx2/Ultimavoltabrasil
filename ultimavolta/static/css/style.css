@@ -1,0 +1,107 @@
+:root {
+  --vermelho: #d7262e;
+  --vermelho-esc: #a91c23;
+  --preto: #121212;
+  --cinza: #6b6b6b;
+  --claro: #f5f3f2;
+  --borda: #e3dfdd;
+}
+* { box-sizing: border-box; margin: 0; }
+body {
+  font-family: "Barlow", system-ui, sans-serif;
+  color: var(--preto);
+  background: #fff;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+main { flex: 1; }
+.pg-home main { display: flex; }
+.pg-home .rodape { border-top: 0; }
+h1, h2, .marca span, .sobretitulo {
+  font-family: "Barlow Condensed", "Arial Narrow", sans-serif;
+  text-transform: uppercase;
+  letter-spacing: .01em;
+}
+
+/* topo */
+.topo {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 14px clamp(16px, 4vw, 48px);
+  border-bottom: 1px solid var(--borda);
+  background: #fff;
+}
+.marca { display: flex; align-items: center; gap: 10px; text-decoration: none; color: var(--preto); }
+.marca img { height: 40px; }
+.marca span { font-size: 1.35rem; font-weight: 800; }
+.marca b { color: var(--vermelho); }
+.topo nav { display: flex; align-items: center; gap: 14px; }
+.link { color: var(--preto); text-decoration: none; font-weight: 600; }
+
+/* botões */
+.btn {
+  display: inline-block; border: 2px solid var(--vermelho);
+  background: var(--vermelho); color: #fff;
+  padding: 8px 22px; border-radius: 4px;
+  font: 600 .95rem "Barlow", sans-serif; text-decoration: none; cursor: pointer;
+  transition: background .15s, border-color .15s;
+}
+.btn:hover { background: var(--vermelho-esc); border-color: var(--vermelho-esc); }
+.btn-contorno { background: transparent; color: var(--vermelho); }
+.btn-contorno:hover { color: #fff; }
+.btn-grande { padding: 13px 30px; font-size: 1.05rem; }
+
+/* home */
+.hero {
+  position: relative; overflow: hidden;
+  flex: 1;
+  display: flex; align-items: center;
+  padding: 48px clamp(16px, 6vw, 96px);
+  background: var(--preto); color: #fff;
+}
+.pista {
+  position: absolute; right: -12vw; top: 50%;
+  width: 70vw; max-width: 900px; aspect-ratio: 2 / 1;
+  transform: translateY(-50%) rotate(-8deg);
+  border-radius: 999px;
+  border: 26px solid var(--vermelho);
+  box-shadow: 0 0 0 10px var(--preto), 0 0 0 14px #fff3, inset 0 0 0 10px var(--preto), inset 0 0 0 14px #fff3;
+  opacity: .9;
+}
+.hero-txt { position: relative; max-width: 620px; }
+.sobretitulo { color: var(--vermelho); font-weight: 600; font-size: 1rem; letter-spacing: .12em; margin-bottom: 10px; }
+.hero h1 { font-size: clamp(2.6rem, 6vw, 4.6rem); font-weight: 800; line-height: .98; margin-bottom: 20px; }
+.hero h1 em { font-style: normal; color: var(--vermelho); }
+.lead { font-size: 1.1rem; line-height: 1.55; color: #d6d6d6; margin-bottom: 30px; max-width: 520px; }
+
+/* login */
+.caixa-login {
+  max-width: 400px; margin: 72px auto; padding: 36px 32px;
+  border: 1px solid var(--borda); border-top: 5px solid var(--vermelho); border-radius: 6px;
+}
+.caixa-login h1 { font-size: 2.2rem; }
+.sub { color: var(--cinza); margin: 4px 0 24px; }
+.caixa-login form { display: grid; gap: 16px; }
+.caixa-login label { display: grid; gap: 6px; font-weight: 600; font-size: .9rem; }
+.caixa-login input {
+  padding: 11px 12px; border: 1px solid var(--borda); border-radius: 4px; font: inherit;
+}
+.caixa-login input:focus { outline: 2px solid var(--vermelho); border-color: transparent; }
+.caixa-login .btn { width: 100%; margin-top: 6px; }
+.alerta { background: #fdecec; color: var(--vermelho-esc); padding: 10px 12px; border-radius: 4px; margin-bottom: 16px; }
+
+/* painéis */
+.painel { padding: 40px clamp(16px, 5vw, 64px); }
+.painel h1 { font-size: 2.4rem; margin-bottom: 24px; }
+.cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 18px; }
+.card { border: 1px solid var(--borda); border-left: 4px solid var(--vermelho); border-radius: 6px; padding: 20px; background: var(--claro); }
+.card h2 { font-size: 1.4rem; margin-bottom: 6px; }
+.card p { color: var(--cinza); margin-bottom: 12px; }
+.tag { font-size: .75rem; text-transform: uppercase; letter-spacing: .08em; color: var(--cinza); }
+
+.rodape { text-align: center; padding: 18px; font-size: .85rem; color: var(--cinza); border-top: 1px solid var(--borda); }
+
+@media (max-width: 640px) {
+  .marca span { font-size: 1.1rem; }
+  .pista { right: -40vw; width: 120vw; opacity: .35; }
+}

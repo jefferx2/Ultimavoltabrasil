@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block titulo %}Última Volta Brasil{% endblock %}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;800&family=Barlow:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body class="{% block body_class %}{% endblock %}">
+  <header class="topo">
+    <a class="marca" href="{{ url_for('home') }}">
+      <img src="{{ url_for('static', filename='img/logo.png') }}" alt="" onerror="this.remove()">
+      <span>ÚLTIMA VOLTA <b>BRASIL</b></span>
+    </a>
+    <nav>
+      {% if usuario %}
+        <a class="link" href="{{ url_for('painel_instrutor' if usuario.perfil == 'instrutor' else 'painel_aluno') }}">{{ usuario.nome.split()[0] }}</a>
+        <a class="btn btn-contorno" href="{{ url_for('sair') }}">Sair</a>
+      {% else %}
+        <a class="btn" href="{{ url_for('login') }}">Entrar</a>
+      {% endif %}
+    </nav>
+  </header>
+
+  <main>{% block conteudo %}{% endblock %}</main>
+
+  <footer class="rodape">© 2026 Última Volta Brasil · Performance · Atletismo · Saúde</footer>
+</body>
+</html>

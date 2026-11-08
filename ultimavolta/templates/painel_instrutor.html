@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% block titulo %}Instrutor · Última Volta Brasil{% endblock %}
+{% block conteudo %}
+<section class="painel">
+  <p class="sobretitulo">Área do instrutor</p>
+  <h1>Olá, {{ usuario.nome.split()[0] }}</h1>
+  <div class="cards">
+    <div class="card"><h2>Alunos</h2><p>Cadastro e acesso dos alunos.</p><span class="tag">em breve</span></div>
+    <div class="card"><h2>Ciclos</h2><p>Montagem dos ciclos com treinos de corrida e academia.</p><span class="tag">em breve</span></div>
+    <div class="card"><h2>Acompanhamento</h2><p>Treinos realizados pelos alunos.</p><span class="tag">em breve</span></div>
+  </div>
+</section>
+{% endblock %}

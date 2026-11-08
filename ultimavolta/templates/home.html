@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block body_class %}pg-home{% endblock %}
+{% block conteudo %}
+<section class="hero">
+  <div class="pista" aria-hidden="true"></div>
+  <div class="hero-txt">
+    <p class="sobretitulo">Corrida de pista e rua</p>
+    <h1>Treine para a sua<br><em>melhor última volta.</em></h1>
+    <p class="lead">Projeto independente dedicado à corrida, com foco em performance e esporte competitivo.
+      Ciclos de treino de corrida e academia acompanhados pelo seu instrutor.</p>
+    <a class="btn btn-grande" href="{{ url_for('login') }}">Acessar o sistema</a>
+  </div>
+</section>
+{% endblock %}

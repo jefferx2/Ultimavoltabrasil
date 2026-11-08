@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+{% block titulo %}Aluno · Última Volta Brasil{% endblock %}
+{% block conteudo %}
+<section class="painel">
+  <p class="sobretitulo">Área do aluno</p>
+  <h1>Olá, {{ usuario.nome.split()[0] }}</h1>
+  <div class="cards">
+    <div class="card"><h2>Ciclo atual</h2><p>Seus treinos de corrida e academia da semana.</p><span class="tag">em breve</span></div>
+    <div class="card"><h2>Histórico</h2><p>Ciclos e treinos já realizados.</p><span class="tag">em breve</span></div>
+  </div>
+</section>
+{% endblock %}
