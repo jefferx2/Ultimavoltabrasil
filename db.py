@@ -71,6 +71,13 @@ CREATE TABLE IF NOT EXISTS usuarios (
     ativo INTEGER NOT NULL DEFAULT 1,
     criado_em TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+-- O app acessa direto pelo Postgres; a API pública do Supabase fica bloqueada.
+ALTER TABLE usuarios ENABLE ROW LEVEL SECURITY;
+DO $$ BEGIN
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'anon') THEN
+    REVOKE ALL ON usuarios FROM anon, authenticated;
+  END IF;
+END $$;
 """
 
 
