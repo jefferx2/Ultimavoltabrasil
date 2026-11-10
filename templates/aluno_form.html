@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+{% block titulo %}{{ 'Novo aluno' if novo else aluno.nome }} · Última Volta Brasil{% endblock %}
+{% block conteudo %}
+<section class="painel painel-estreito">
+  <p class="sobretitulo"><a href="{{ url_for('alunos') }}">← Alunos</a></p>
+  <h1>{{ 'Novo aluno' if novo else aluno.nome }}</h1>
+
+  <form method="post" class="form">
+    <input type="hidden" name="csrf" value="{{ csrf_token }}">
+    <div class="grade">
+      <label class="col-2">Nome completo *
+        <input name="nome" required value="{{ aluno.nome or '' }}">
+      </label>
+      <label class="col-2">E-mail (será o login) *
+        <input type="email" name="email" required value="{{ aluno.email or '' }}">
+      </label>
+      <label>Data de nascimento
+        <input type="date" name="data_nascimento" value="{{ aluno.data_nascimento or '' }}">
+      </label>
+      <label>Prova principal
+        <input name="prova_principal" list="provas" placeholder="ex.: 800 m" value="{{ aluno.prova_principal or '' }}">
+        <datalist id="provas">{% for p in provas %}<option value="{{ p }}">{% endfor %}</datalist>
+      </label>
+      <label class="col-2">Telefone / WhatsApp
+        <input name="telefone" value="{{ aluno.telefone or '' }}">
+      </label>
+      <label class="col-2">Observações
+        <textarea name="observacoes" rows="3" placeholder="Histórico, lesões, objetivos...">{{ aluno.observacoes or '' }}</textarea>
+      </label>
+      {% if novo %}
+      <label class="col-2">Senha inicial
+        <input name="senha" minlength="{{ senha_min }}" placeholder="Deixe em branco para gerar automaticamente">
+        <small>O aluno será obrigado a trocar no primeiro acesso.</small>
+      </label>
+      {% endif %}
+    </div>
+    <div class="botoes">
+      <button class="btn" type="submit">{{ 'Cadastrar aluno' if novo else 'Salvar' }}</button>
+      <a class="link" href="{{ url_for('alunos') }}">Cancelar</a>
+    </div>
+  </form>
+
+  {% if not novo %}
+  <div class="zona">
+    <h2>Acesso</h2>
+    <div class="zona-linha">
+      <div><b>Redefinir senha</b><p>Gera uma senha nova; o aluno troca no próximo acesso.</p></div>
+      <form method="post" action="{{ url_for('aluno_redefinir_senha', aluno_id=aluno.id) }}"
+            onsubmit="return confirm('Gerar uma nova senha para este aluno? A senha atual deixa de funcionar.')">
+        <input type="hidden" name="csrf" value="{{ csrf_token }}">
+        <button class="btn btn-contorno" type="submit">Redefinir senha</button>
+      </form>
+    </div>
+    <div class="zona-linha">
+      <div><b>{{ 'Desativar' if aluno.ativo else 'Reativar' }} aluno</b>
+        <p>{{ 'O aluno não consegue mais entrar. Os dados são mantidos.' if aluno.ativo else 'O aluno volta a conseguir entrar.' }}</p></div>
+      <form method="post" action="{{ url_for('aluno_status', aluno_id=aluno.id) }}">
+        <input type="hidden" name="csrf" value="{{ csrf_token }}">
+        <input type="hidden" name="mostrar" value="todos">
+        <button class="btn btn-contorno" type="submit">{{ 'Desativar' if aluno.ativo else 'Reativar' }}</button>
+      </form>
+    </div>
+  </div>
+  {% endif %}
+</section>
+{% endblock %}

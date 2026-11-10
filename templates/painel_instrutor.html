@@ -1,13 +1,17 @@
 {% extends "base.html" %}
-{% block titulo %}Instrutor · Última Volta Brasil{% endblock %}
+{% block titulo %}Professor · Última Volta Brasil{% endblock %}
 {% block conteudo %}
 <section class="painel">
-  <p class="sobretitulo">Área do instrutor</p>
+  <p class="sobretitulo">Área do professor</p>
   <h1>Olá, {{ usuario.nome.split()[0] }}</h1>
   <div class="cards">
-    <div class="card"><h2>Alunos</h2><p>Cadastro e acesso dos alunos.</p><span class="tag">em breve</span></div>
-    <div class="card"><h2>Ciclos</h2><p>Montagem dos ciclos com treinos de corrida e academia.</p><span class="tag">em breve</span></div>
-    <div class="card"><h2>Acompanhamento</h2><p>Treinos realizados pelos alunos.</p><span class="tag">em breve</span></div>
+    <a class="card card-link" href="{{ url_for('alunos') }}">
+      <h2>Alunos</h2>
+      <p>Cadastro e acesso dos alunos.</p>
+      <span class="numero">{{ total_alunos }}</span> <span class="tag">ativo{{ 's' if total_alunos != 1 }}</span>
+    </a>
+    <div class="card"><h2>Ciclos</h2><p>Macrociclo e fases de corrida e academia por aluno.</p><span class="tag">em breve</span></div>
+    <div class="card"><h2>Acompanhamento</h2><p>Desempenho registrado pelos alunos.</p><span class="tag">em breve</span></div>
   </div>
 </section>
 {% endblock %}

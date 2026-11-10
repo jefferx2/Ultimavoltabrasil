@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block titulo %}{{ titulo }} · Última Volta Brasil{% endblock %}
+{% block conteudo %}
+<section class="caixa-login caixa-larga">
+  <h1>{{ titulo }}</h1>
+  <p class="sub">Envie estes dados para <b>{{ nome }}</b>. A senha aparece só agora. Depois disso, só redefinindo.</p>
+  <div class="credenciais" id="cred">
+    <div><span>Site</span><b>{{ request.host_url }}login</b></div>
+    <div><span>E-mail</span><b>{{ email }}</b></div>
+    <div><span>Senha provisória</span><b class="senha">{{ senha }}</b></div>
+  </div>
+  <div class="botoes">
+    <button class="btn" type="button" onclick="copiar()">Copiar mensagem</button>
+    <a class="link" href="{{ url_for('alunos') }}">Voltar aos alunos</a>
+  </div>
+  <p class="sub" id="copiado" hidden>Copiado. É só colar no WhatsApp ou e-mail.</p>
+</section>
+<script>
+function copiar() {
+  const txt = {{ ("Olá, " ~ nome.split()[0] ~ "! Seu acesso ao Última Volta Brasil:\n" ~
+                  "Site: " ~ request.host_url ~ "login\nE-mail: " ~ email ~ "\nSenha provisória: " ~ senha ~
+                  "\nNo primeiro acesso você vai criar sua própria senha.") | tojson }};
+  navigator.clipboard.writeText(txt).then(() => document.getElementById('copiado').hidden = false);
+}
+</script>
+{% endblock %}

@@ -16,7 +16,13 @@
     </a>
     <nav>
       {% if usuario %}
-        <a class="link" href="{{ url_for('painel_instrutor' if usuario.perfil == 'instrutor' else 'painel_aluno') }}">{{ usuario.nome.split()[0] }}</a>
+        {% if usuario.perfil == 'instrutor' and not usuario.trocar_senha %}
+          <a class="link" href="{{ url_for('painel_instrutor') }}">Painel</a>
+          <a class="link" href="{{ url_for('alunos') }}">Alunos</a>
+        {% elif not usuario.trocar_senha %}
+          <a class="link" href="{{ url_for('painel_aluno') }}">Meus treinos</a>
+        {% endif %}
+        <a class="link link-sec" href="{{ url_for('trocar_senha') }}" title="Trocar senha">{{ usuario.nome.split()[0] }}</a>
         <a class="btn btn-contorno" href="{{ url_for('sair') }}">Sair</a>
       {% else %}
         <a class="btn" href="{{ url_for('login') }}">Entrar</a>
@@ -24,7 +30,16 @@
     </nav>
   </header>
 
-  <main>{% block conteudo %}{% endblock %}</main>
+  <main>
+    {% with msgs = get_flashed_messages(with_categories=true) %}
+      {% if msgs %}
+        <div class="avisos">
+          {% for cat, msg in msgs %}<div class="alerta alerta-{{ cat }}">{{ msg }}</div>{% endfor %}
+        </div>
+      {% endif %}
+    {% endwith %}
+    {% block conteudo %}{% endblock %}
+  </main>
 
   <footer class="rodape">© 2026 Última Volta Brasil · Performance · Atletismo · Saúde</footer>
 </body>

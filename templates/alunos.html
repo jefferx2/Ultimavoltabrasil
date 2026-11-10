@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% block titulo %}Alunos · Última Volta Brasil{% endblock %}
+{% block conteudo %}
+<section class="painel">
+  <div class="cabecalho">
+    <div>
+      <p class="sobretitulo">Área do professor</p>
+      <h1>Alunos</h1>
+    </div>
+    <a class="btn" href="{{ url_for('aluno_novo') }}">+ Novo aluno</a>
+  </div>
+
+  <div class="filtros">
+    <a class="{{ 'ativo' if mostrar != 'todos' }}" href="{{ url_for('alunos') }}">Ativos</a>
+    <a class="{{ 'ativo' if mostrar == 'todos' }}" href="{{ url_for('alunos', mostrar='todos') }}">Todos</a>
+  </div>
+
+  {% if alunos %}
+  <div class="tabela-wrap">
+    <table class="tabela">
+      <thead>
+        <tr><th>Nome</th><th>E-mail</th><th>Idade</th><th>Prova principal</th><th>Situação</th><th></th></tr>
+      </thead>
+      <tbody>
+        {% for a in alunos %}
+        <tr class="{{ '' if a.ativo else 'inativo' }}">
+          <td><a href="{{ url_for('aluno_editar', aluno_id=a.id) }}"><b>{{ a.nome }}</b></a></td>
+          <td>{{ a.email }}</td>
+          <td>{{ a.idade if a.idade is not none else '—' }}</td>
+          <td>{{ a.prova_principal or '—' }}</td>
+          <td>
+            {% if not a.ativo %}<span class="selo selo-cinza">Inativo</span>
+            {% elif a.trocar_senha %}<span class="selo selo-amarelo">Aguardando 1º acesso</span>
+            {% else %}<span class="selo selo-verde">Ativo</span>{% endif %}
+          </td>
+          <td class="acoes"><a class="link" href="{{ url_for('aluno_editar', aluno_id=a.id) }}">Editar</a></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+    <div class="vazio">
+      <p>{{ 'Nenhum aluno cadastrado ainda.' if mostrar == 'todos' else 'Nenhum aluno ativo.' }}</p>
+      <a class="btn" href="{{ url_for('aluno_novo') }}">Cadastrar o primeiro aluno</a>
+    </div>
+  {% endif %}
+</section>
+{% endblock %}

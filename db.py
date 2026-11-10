@@ -81,10 +81,37 @@ END $$;
 """
 
 
+# Colunas acrescentadas depois da criação da tabela (aplicadas em bancos já existentes).
+# nome -> tipo (o mesmo nos dois bancos)
+COLUNAS_USUARIOS = {
+    "instrutor_id": "INTEGER REFERENCES usuarios(id)",
+    "data_nascimento": "TEXT",
+    "prova_principal": "TEXT",
+    "telefone": "TEXT",
+    "observacoes": "TEXT",
+    "trocar_senha": "INTEGER NOT NULL DEFAULT 0",
+}
+
+
+def _colunas_existentes(conn, tabela):
+    if IS_PG:
+        cur = conn.execute(
+            "SELECT column_name FROM information_schema.columns "
+            "WHERE table_schema = current_schema() AND table_name = %s", (tabela,))
+        return {r["column_name"] for r in cur.fetchall()}
+    return {r["name"] for r in conn.execute(f"PRAGMA table_info({tabela})").fetchall()}
+
+
 def init_db():
     with connect() as conn:
         if IS_PG:
             conn.execute(SCHEMA_PG)
         else:
             conn.executescript(SCHEMA_SQLITE)
+        existentes = _colunas_existentes(conn, "usuarios")
+        for nome, tipo in COLUNAS_USUARIOS.items():
+            if nome not in existentes:
+                # IF NOT EXISTS: os workers do gunicorn sobem juntos e podem tentar ao mesmo tempo
+                se_nao = "IF NOT EXISTS " if IS_PG else ""
+                conn.execute(f"ALTER TABLE usuarios ADD COLUMN {se_nao}{nome} {tipo}")
         conn.commit()
