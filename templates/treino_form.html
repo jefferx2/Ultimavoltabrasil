@@ -1,0 +1,118 @@
+{% extends "base.html" %}
+{% block titulo %}{{ 'Novo treino' if novo else 'Editar treino' }} · Última Volta Brasil{% endblock %}
+{% block conteudo %}
+{% set acad = treino.modalidade == 'academia' %}
+{% macro linha(it) %}
+<tr>
+  <td class="mover">
+    <input type="hidden" name="item_id" value="{{ it.id or '' }}">
+    <button type="button" data-acao="subir" title="Subir">▲</button><button type="button" data-acao="descer" title="Descer">▼</button>
+  </td>
+  {% if acad %}
+    <td><input name="exercicio" list="lista-exercicios" value="{{ it.exercicio or '' }}" placeholder="ex.: Agachamento livre" class="w-xl"></td>
+    <td><input name="series" type="number" min="1" max="20" value="{{ it.series or '' }}" class="w-xs"></td>
+    <td><input name="repeticoes" value="{{ it.repeticoes or '' }}" placeholder="8–10" class="w-s"></td>
+    <td><input name="carga" value="{{ it.carga or '' }}" placeholder="ex.: 60 kg / 70% 1RM" class="w-m"></td>
+    <td><input name="descanso" value="{{ it.descanso or '' }}" placeholder="90 s" class="w-s"></td>
+    <td><input name="observacao" value="{{ it.observacao or '' }}" class="w-m"></td>
+  {% else %}
+    <td><select name="tipo" class="w-m">
+      <option value="">—</option>
+      {% for tp in tipos %}<option {{ 'selected' if it.tipo == tp }}>{{ tp }}</option>{% endfor %}
+      {% if it.tipo and it.tipo not in tipos %}<option selected>{{ it.tipo }}</option>{% endif %}
+    </select></td>
+    <td><input name="repeticoes" type="number" min="1" max="100" value="{{ it.repeticoes or 1 }}" class="w-xs"></td>
+    <td><input name="distancia" value="{{ it.distancia or '' }}" placeholder="400 / 8 km" class="w-s"></td>
+    <td><input name="duracao" value="{{ it.duracao or '' }}" placeholder="20 min" class="w-s"></td>
+    <td><input name="pace" value="{{ it.pace or '' }}" placeholder="3:20/km · 68 s" class="w-m"></td>
+    <td><input name="recuperacao" value="{{ it.recuperacao or '' }}" placeholder="2 min trote" class="w-m"></td>
+    <td><input name="observacao" value="{{ it.observacao or '' }}" class="w-m"></td>
+  {% endif %}
+  <td><button type="button" data-acao="remover" class="remover" title="Remover">✕</button></td>
+</tr>
+{% endmacro %}
+<section class="painel">
+  <p class="sobretitulo"><a href="{{ voltar }}">← {{ macro.nome }} · {{ macro.aluno_nome }}</a></p>
+  <h1>{{ 'Novo treino' if novo else 'Editar treino' }} de {{ MODALIDADES[treino.modalidade] | lower }}</h1>
+  {% if fase %}
+  <p class="sub">{{ dia_nome }} · Fase {{ fase.ordem }} · <b>{{ fase.nome }}</b>
+    {% if acad and (fase.series or fase.repeticoes) %} — sugestão {{ fase.series or '?' }} séries × {{ fase.repeticoes or '?' }} reps{% endif %}
+    · int. {{ NIVEIS[fase.intensidade] | lower }}{% if fase.intensidade_ref %} ({{ fase.intensidade_ref }}){% endif %}
+    · vol. {{ NIVEIS_VOLUME[fase.volume] | lower }}{% if fase.volume_ref %} ({{ fase.volume_ref }}){% endif %}
+  </p>
+  {% endif %}
+
+  <form method="post" class="form" id="form-treino">
+    <input type="hidden" name="csrf" value="{{ csrf_token }}">
+    <input type="hidden" name="modalidade" value="{{ treino.modalidade }}">
+    <div class="grade grade-3">
+      <label>Data *
+        <input type="date" name="data" required value="{{ treino.data or '' }}">
+      </label>
+      <label class="col-2">Título
+        <input name="titulo" value="{{ treino.titulo or '' }}"
+               placeholder="{{ 'ex.: Treino A — membros inferiores' if acad else 'ex.: Intervalado curto' }}">
+      </label>
+    </div>
+
+    <h2 class="sec">{{ 'Exercícios' if acad else 'Blocos da sessão' }}</h2>
+    <div class="tabela-wrap">
+      <table class="tabela tabela-itens">
+        <thead>
+          <tr>
+            <th></th>
+            {% if acad %}
+              <th>Exercício *</th><th>Séries *</th><th>Repetições</th><th>Carga sugerida</th><th>Descanso</th><th>Observação</th>
+            {% else %}
+              <th>Tipo *</th><th>Rep.</th><th>Distância</th><th>Duração</th><th>Ritmo / pace</th><th>Recuperação</th><th>Observação</th>
+            {% endif %}
+            <th></th>
+          </tr>
+        </thead>
+        <tbody id="itens">
+          {% for it in treino.itens %}{{ linha(it) }}{% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <button type="button" class="btn btn-contorno btn-peq" id="add-item">+ {{ 'Exercício' if acad else 'Bloco' }}</button>
+    {% if not acad %}<p class="nota">Distância: <b>400</b> = 400 m · <b>1,5 km</b> · <b>8</b> = 8 km. Use a duração para blocos por tempo (ex.: 20 min).</p>{% endif %}
+
+    <label class="bloco-campo">Orientações gerais
+      <textarea name="observacoes" rows="2" placeholder="{{ 'ex.: priorizar técnica, cadência 2-0-2' if acad else 'ex.: pista, tênis de prova' }}">{{ treino.observacoes or '' }}</textarea>
+    </label>
+
+    <div class="botoes">
+      <button class="btn" type="submit">Salvar treino</button>
+      <a class="link" href="{{ voltar }}">Cancelar</a>
+    </div>
+  </form>
+
+  {% if acad %}<datalist id="lista-exercicios">{% for e in exercicios %}<option value="{{ e }}">{% endfor %}</datalist>{% endif %}
+  <template id="modelo-linha">{{ linha({'series': sugestao.series, 'repeticoes': sugestao.repeticoes} if acad else {'repeticoes': 1}) }}</template>
+</section>
+
+<script>
+(function () {
+  const corpo = document.getElementById('itens');
+  const modelo = document.getElementById('modelo-linha');
+  document.getElementById('add-item').addEventListener('click', () => {
+    corpo.appendChild(modelo.content.cloneNode(true));
+    corpo.lastElementChild.querySelector('input:not([type=hidden]), select').focus();
+  });
+  corpo.addEventListener('click', (ev) => {
+    const b = ev.target.closest('button[data-acao]');
+    if (!b) return;
+    const tr = b.closest('tr');
+    if (b.dataset.acao === 'remover') {
+      if (corpo.children.length > 1) tr.remove();
+      else tr.querySelectorAll('input:not([type=hidden]), select').forEach(i => i.value = '');
+    } else if (b.dataset.acao === 'subir' && tr.previousElementSibling) {
+      corpo.insertBefore(tr, tr.previousElementSibling);
+    } else if (b.dataset.acao === 'descer' && tr.nextElementSibling) {
+      corpo.insertBefore(tr.nextElementSibling, tr);
+    }
+  });
+})();
+</script>
+{% endblock %}
+

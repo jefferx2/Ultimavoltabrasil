@@ -1,0 +1,136 @@
+{% extends "base.html" %}
+{% block titulo %}Semana {{ s.n }} · {{ macro.nome }} · Última Volta Brasil{% endblock %}
+
+
+{% block conteudo %}
+{% macro bloco_corrida(b) -%}
+  <b>{{ b.tipo }}</b>
+  {%- if b.repeticoes > 1 %} {{ b.repeticoes }}×{% endif %}
+  {%- if b.distancia_m %} {{ fmt_dist(b.distancia_m) }}{% endif %}
+  {%- if b.duracao %} {{ b.duracao }}{% endif %}
+  {%- if b.pace %} <span class="pace">@ {{ b.pace }}</span>{% endif %}
+  {%- if b.recuperacao %} <span class="rec">· rec. {{ b.recuperacao }}</span>{% endif %}
+  {%- if b.observacao %}<small>{{ b.observacao }}</small>{% endif %}
+{%- endmacro %}
+<section class="painel">
+  <p class="sobretitulo">
+    {% if editavel %}<a href="{{ url_for('macro_ver', macro_id=macro.id) }}">← {{ macro.nome }} · {{ macro.aluno_nome }}</a>
+    {% else %}<a href="{{ url_for('aluno_macro', macro_id=macro.id) }}">← {{ macro.nome }}</a>{% endif %}
+  </p>
+
+  {% set ep = 'semana' if editavel else 'aluno_semana' %}
+  <div class="cabecalho semana-topo">
+    <div>
+      <h1>Semana {{ s.n }} <span class="de">de {{ s.limite }}</span></h1>
+      <p class="sub">{{ s.inicio | data_br }} a {{ s.fim | data_br }}</p>
+    </div>
+    <nav class="paginacao">
+      {% if s.n > 1 %}<a class="btn btn-contorno btn-peq" href="{{ url_for(ep, macro_id=macro.id, n=s.n - 1) }}">◀ Semana {{ s.n - 1 }}</a>{% endif %}
+      {% if s.n < s.limite %}<a class="btn btn-contorno btn-peq" href="{{ url_for(ep, macro_id=macro.id, n=s.n + 1) }}">Semana {{ s.n + 1 }} ▶</a>{% endif %}
+    </nav>
+  </div>
+
+  <div class="semana-info">
+    {% for mod, rot in MODALIDADES.items() %}
+      {% set f = s.fases[mod] %}
+      <div class="agora-card" {% if f %}style="--cor: {{ f.cor }}"{% endif %}>
+        <span class="agora-mod">{{ rot }}</span>
+        {% if f %}
+          <b>Fase {{ f.ordem }} · {{ f.nome }}</b>
+          <span>
+            {% if mod == 'academia' and (f.series or f.repeticoes) %}{{ f.series or '?' }} séries × {{ f.repeticoes or '?' }} reps · {% endif %}
+            int. {{ NIVEIS[f.intensidade] | lower }}{% if f.intensidade_ref %} ({{ f.intensidade_ref }}){% endif %}
+            · vol. {{ NIVEIS_VOLUME[f.volume] | lower }}{% if f.volume_ref %} ({{ f.volume_ref }}){% endif %}
+          </span>
+        {% else %}<b class="mudo">Fora das fases</b>{% endif %}
+      </div>
+    {% endfor %}
+    <div class="agora-card agora-comp">
+      <span class="agora-mod">Planejado na semana</span>
+      <b>{{ ('%.1f' % s.resumo.km).replace('.', ',') if s.resumo.km % 1 else '%d' % s.resumo.km }} km de corrida</b>
+      <span>{{ s.resumo.corridas }} corrida{{ 's' if s.resumo.corridas != 1 }} · {{ s.resumo.academias }} academia{{ 's' if s.resumo.academias != 1 }} ({{ s.resumo.series }} séries)</span>
+    </div>
+  </div>
+
+  <div class="dias">
+    {% for d in s.dias %}
+    <div class="dia {{ 'dia-hoje' if d.hoje }} {{ 'dia-vazio' if not d.treinos }}" id="d{{ d.data.isoformat() }}">
+      <div class="dia-rotulo">
+        <b>{{ d.nome }}</b>
+        <span>{{ d.data | data_curta }}{% if d.hoje %} · hoje{% endif %}</span>
+      </div>
+      <div class="dia-treinos">
+        {% for t in d.treinos %}
+        <article class="treino treino-{{ t.modalidade }}">
+          <header>
+            <span class="treino-mod">{{ MODALIDADES[t.modalidade] }}</span>
+            {% if t.titulo %}<b>{{ t.titulo }}</b>{% endif %}
+            <span class="treino-total">
+              {% if t.modalidade == 'corrida' %}{{ fmt_dist(t.metros) if t.metros else '' }}
+              {% else %}{{ t.itens | length }} exercício{{ 's' if t.itens | length != 1 }} · {{ t.series_total }} séries{% endif %}
+            </span>
+          </header>
+          {% if t.modalidade == 'corrida' %}
+            <ol class="blocos">{% for b in t.itens %}<li>{{ bloco_corrida(b) }}</li>{% endfor %}</ol>
+          {% else %}
+            <table class="exercicios">
+              {% for e in t.itens %}
+              <tr>
+                <td><b>{{ e.exercicio }}</b>{% if e.observacao %}<small>{{ e.observacao }}</small>{% endif %}</td>
+                <td class="sr">{{ e.series }} × {{ e.repeticoes or '—' }}</td>
+                <td class="cg">{{ e.carga or '' }}</td>
+                <td class="ds">{% if e.descanso %}⏱ {{ e.descanso }}{% endif %}</td>
+              </tr>
+              {% endfor %}
+            </table>
+          {% endif %}
+          {% if t.observacoes %}<p class="treino-obs">{{ t.observacoes }}</p>{% endif %}
+          {% if editavel %}
+          <footer>
+            <a class="link" href="{{ url_for('treino_editar', treino_id=t.id) }}">Editar</a>
+            <details class="duplicar">
+              <summary>Copiar para…</summary>
+              <form method="post" action="{{ url_for('treino_duplicar', treino_id=t.id) }}">
+                <input type="hidden" name="csrf" value="{{ csrf_token }}">
+                <input type="date" name="data" required value="{{ d.data_mais7.isoformat() }}">
+                <button class="btn btn-peq" type="submit">Copiar</button>
+              </form>
+            </details>
+            <form method="post" action="{{ url_for('treino_excluir', treino_id=t.id) }}" class="inline"
+                  onsubmit="return confirm('Excluir este treino?')">
+              <input type="hidden" name="csrf" value="{{ csrf_token }}">
+              <button class="link-btn" type="submit">Excluir</button>
+            </form>
+          </footer>
+          {% endif %}
+        </article>
+        {% else %}
+          <span class="descanso">{{ 'Sem treino' if editavel else 'Descanso' }}</span>
+        {% endfor %}
+        {% if editavel %}
+        <div class="dia-add">
+          <a href="{{ url_for('treino_novo', macro_id=macro.id, modalidade='corrida', data=d.data.isoformat()) }}">+ Corrida</a>
+          <a href="{{ url_for('treino_novo', macro_id=macro.id, modalidade='academia', data=d.data.isoformat()) }}">+ Academia</a>
+        </div>
+        {% endif %}
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+
+  {% if editavel %}
+  <div class="zona">
+    <div class="zona-linha">
+      <div><b>Copiar esta semana</b><p>Copia todos os treinos da semana {{ s.n }} para outra semana (mantendo os dias). Os treinos que já existem lá continuam.</p></div>
+      <form method="post" action="{{ url_for('semana_copiar', macro_id=macro.id, n=s.n) }}" class="form-linha">
+        <input type="hidden" name="csrf" value="{{ csrf_token }}">
+        <select name="destino">
+          {% for k in range(1, s.limite + 1) if k != s.n %}<option value="{{ k }}" {{ 'selected' if k == s.n + 1 }}>Semana {{ k }}</option>{% endfor %}
+        </select>
+        <button class="btn btn-contorno btn-peq" type="submit">Copiar</button>
+      </form>
+    </div>
+  </div>
+  {% endif %}
+</section>
+{% endblock %}

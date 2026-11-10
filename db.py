@@ -73,6 +73,9 @@ class Transacao:
     def execute(self, query, params=()):
         self.conn.execute(_sql(query), params)
 
+    def query_all(self, query, params=()):
+        return [dict(r) for r in self.conn.execute(_sql(query), params).fetchall()]
+
     def insert(self, query, params=()):
         if IS_PG:
             return self.conn.execute(_sql(query) + " RETURNING id", params).fetchone()["id"]
@@ -124,6 +127,41 @@ CREATE TABLE IF NOT EXISTS fases (
 );
 CREATE INDEX IF NOT EXISTS ix_macro_aluno ON macrociclos(aluno_id);
 CREATE INDEX IF NOT EXISTS ix_fases_macro ON fases(macrociclo_id, modalidade, ordem);
+CREATE TABLE IF NOT EXISTS treinos (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    macrociclo_id INTEGER NOT NULL REFERENCES macrociclos(id) ON DELETE CASCADE,
+    data TEXT NOT NULL,
+    modalidade TEXT NOT NULL CHECK (modalidade IN ('academia', 'corrida')),
+    titulo TEXT,
+    observacoes TEXT,
+    criado_em TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS treino_academia (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    treino_id INTEGER NOT NULL REFERENCES treinos(id) ON DELETE CASCADE,
+    ordem INTEGER NOT NULL,
+    exercicio TEXT NOT NULL,
+    series INTEGER NOT NULL CHECK (series BETWEEN 1 AND 20),
+    repeticoes TEXT,
+    carga TEXT,
+    descanso TEXT,
+    observacao TEXT
+);
+CREATE TABLE IF NOT EXISTS treino_corrida (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    treino_id INTEGER NOT NULL REFERENCES treinos(id) ON DELETE CASCADE,
+    ordem INTEGER NOT NULL,
+    tipo TEXT NOT NULL,
+    repeticoes INTEGER NOT NULL DEFAULT 1 CHECK (repeticoes BETWEEN 1 AND 100),
+    distancia_m INTEGER CHECK (distancia_m IS NULL OR distancia_m BETWEEN 1 AND 100000),
+    duracao TEXT,
+    pace TEXT,
+    recuperacao TEXT,
+    observacao TEXT
+);
+CREATE INDEX IF NOT EXISTS ix_treinos_macro ON treinos(macrociclo_id, data);
+CREATE INDEX IF NOT EXISTS ix_tacad_treino ON treino_academia(treino_id, ordem);
+CREATE INDEX IF NOT EXISTS ix_tcorr_treino ON treino_corrida(treino_id, ordem);
 """
 
 SCHEMA_PG = """
@@ -164,9 +202,44 @@ CREATE TABLE IF NOT EXISTS fases (
 );
 CREATE INDEX IF NOT EXISTS ix_macro_aluno ON macrociclos(aluno_id);
 CREATE INDEX IF NOT EXISTS ix_fases_macro ON fases(macrociclo_id, modalidade, ordem);
+CREATE TABLE IF NOT EXISTS treinos (
+    id SERIAL PRIMARY KEY,
+    macrociclo_id INTEGER NOT NULL REFERENCES macrociclos(id) ON DELETE CASCADE,
+    data TEXT NOT NULL,
+    modalidade TEXT NOT NULL CHECK (modalidade IN ('academia', 'corrida')),
+    titulo TEXT,
+    observacoes TEXT,
+    criado_em TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE TABLE IF NOT EXISTS treino_academia (
+    id SERIAL PRIMARY KEY,
+    treino_id INTEGER NOT NULL REFERENCES treinos(id) ON DELETE CASCADE,
+    ordem INTEGER NOT NULL,
+    exercicio TEXT NOT NULL,
+    series INTEGER NOT NULL CHECK (series BETWEEN 1 AND 20),
+    repeticoes TEXT,
+    carga TEXT,
+    descanso TEXT,
+    observacao TEXT
+);
+CREATE TABLE IF NOT EXISTS treino_corrida (
+    id SERIAL PRIMARY KEY,
+    treino_id INTEGER NOT NULL REFERENCES treinos(id) ON DELETE CASCADE,
+    ordem INTEGER NOT NULL,
+    tipo TEXT NOT NULL,
+    repeticoes INTEGER NOT NULL DEFAULT 1 CHECK (repeticoes BETWEEN 1 AND 100),
+    distancia_m INTEGER CHECK (distancia_m IS NULL OR distancia_m BETWEEN 1 AND 100000),
+    duracao TEXT,
+    pace TEXT,
+    recuperacao TEXT,
+    observacao TEXT
+);
+CREATE INDEX IF NOT EXISTS ix_treinos_macro ON treinos(macrociclo_id, data);
+CREATE INDEX IF NOT EXISTS ix_tacad_treino ON treino_academia(treino_id, ordem);
+CREATE INDEX IF NOT EXISTS ix_tcorr_treino ON treino_corrida(treino_id, ordem);
 """
 
-TABELAS = ("usuarios", "macrociclos", "fases")
+TABELAS = ("usuarios", "macrociclos", "fases", "treinos", "treino_academia", "treino_corrida")
 
 # O app acessa direto pelo Postgres; a API pública do Supabase fica bloqueada.
 RLS_PG = "".join(f"""

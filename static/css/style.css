@@ -267,3 +267,72 @@ h1, h2, .marca span, .sobretitulo {
 }
 .tl-dir span { transform: translateX(-100%); }
 .tl-hoje.tl-dir span, .tl-comp.tl-dir span { padding-right: 6px; }
+
+/* ---- etapa 2c: semana e treinos ---- */
+.acoes-topo { display: flex; gap: 10px; flex-wrap: wrap; }
+.semana-topo h1 .de { font-size: 1.3rem; color: var(--cinza); }
+.paginacao { display: flex; gap: 8px; }
+.semana-info { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 14px; margin: 6px 0 26px; }
+.semana-info .agora-card span:last-child { font-size: .85rem; }
+
+.dias { border-top: 1px solid var(--borda); }
+.dia { display: grid; grid-template-columns: 120px 1fr; gap: 16px; padding: 16px 0; border-bottom: 1px solid var(--borda); scroll-margin-top: 12px; }
+.dia-hoje { background: linear-gradient(90deg, #fdecec 0, #fff 140px); }
+.dia-rotulo { display: grid; align-content: start; gap: 2px; padding-left: 8px; }
+.dia-rotulo span { color: var(--cinza); font-size: .85rem; }
+.dia-hoje .dia-rotulo b { color: var(--vermelho); }
+.dia-treinos { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-start; }
+.descanso { color: var(--cinza); font-size: .9rem; padding-top: 2px; }
+.dia-add { display: flex; gap: 6px; align-self: center; }
+.dia-add a { font-size: .82rem; font-weight: 600; color: var(--cinza); text-decoration: none; border: 1px dashed var(--borda); border-radius: 4px; padding: 4px 10px; }
+.dia-add a:hover { color: var(--vermelho); border-color: var(--vermelho); }
+.dia-vazio .dia-treinos { align-items: center; }
+
+.treino { border: 1px solid var(--borda); border-radius: 6px; padding: 12px 14px; min-width: 260px; max-width: 520px; flex: 1 1 300px; background: #fff; border-top: 4px solid var(--preto); }
+.treino-corrida { border-top-color: var(--vermelho); }
+.treino header { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px; margin-bottom: 8px; }
+.treino-mod { font: 600 .7rem "Barlow", sans-serif; text-transform: uppercase; letter-spacing: .08em; color: var(--cinza); }
+.treino-total { margin-left: auto; font-size: .82rem; color: var(--cinza); font-weight: 600; }
+.blocos { margin: 0; padding-left: 20px; display: grid; gap: 4px; font-size: .92rem; }
+.blocos small { display: block; color: var(--cinza); font-size: .8rem; }
+.pace { color: var(--vermelho-esc); font-weight: 600; }
+.rec { color: var(--cinza); }
+.exercicios { width: 100%; border-collapse: collapse; font-size: .9rem; }
+.exercicios td { padding: 5px 4px; border-top: 1px solid #f0eeed; vertical-align: top; }
+.exercicios tr:first-child td { border-top: 0; }
+.exercicios small { display: block; color: var(--cinza); font-size: .78rem; }
+.exercicios .sr { white-space: nowrap; font-weight: 600; }
+.exercicios .cg, .exercicios .ds { white-space: nowrap; color: var(--cinza); font-size: .82rem; }
+.treino-obs { margin-top: 8px; font-size: .85rem; color: #444; background: var(--claro); padding: 6px 8px; border-radius: 4px; }
+.treino footer { display: flex; align-items: center; gap: 14px; margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--borda); font-size: .85rem; flex-wrap: wrap; }
+.treino footer .link { color: var(--vermelho); font-weight: 600; text-decoration: none; }
+.link-btn { background: none; border: 0; padding: 0; color: var(--cinza); font: inherit; cursor: pointer; text-decoration: underline; }
+.duplicar summary { cursor: pointer; color: var(--cinza); }
+.duplicar[open] { flex-basis: 100%; order: 3; }
+.duplicar form { display: flex; gap: 8px; margin-top: 6px; }
+.duplicar input { padding: 4px 6px; border: 1px solid var(--borda); border-radius: 4px; font: inherit; }
+.form-linha { display: flex; gap: 8px; align-items: center; }
+.form-linha select { padding: 6px 8px; border: 1px solid var(--borda); border-radius: 4px; font: inherit; }
+
+/* formulário de treino */
+.grade-3 { grid-template-columns: 200px 1fr 1fr !important; }
+.sec { font-size: 1.3rem; margin: 26px 0 10px; }
+.tabela-itens th { font-size: .72rem; }
+.tabela-itens td { padding: 6px 6px; border-top: 1px solid var(--borda); }
+.tabela-itens input, .tabela-itens select { width: 100%; padding: 8px 8px; border: 1px solid var(--borda); border-radius: 4px; font: inherit; font-size: .9rem; }
+.tabela-itens input:focus, .tabela-itens select:focus { outline: 2px solid var(--vermelho); border-color: transparent; }
+.w-xs { min-width: 60px; } .w-s { min-width: 90px; } .w-m { min-width: 130px; } .w-xl { min-width: 220px; }
+.mover { white-space: nowrap; width: 1%; }
+.mover button, .remover { border: 1px solid var(--borda); background: #fff; border-radius: 4px; cursor: pointer; color: var(--cinza); padding: 3px 6px; font-size: .7rem; }
+.remover { font-size: .85rem; }
+.mover button:hover, .remover:hover { color: var(--vermelho); border-color: var(--vermelho); }
+#add-item { margin-top: 10px; }
+.bloco-campo { display: grid; gap: 6px; font-weight: 600; font-size: .9rem; margin-top: 22px; }
+
+@media (max-width: 640px) {
+  .dia { grid-template-columns: 1fr; gap: 8px; }
+  .dia-hoje { background: #fdecec44; }
+  .treino { min-width: 0; }
+  .grade-3 { grid-template-columns: 1fr !important; }
+  .paginacao .btn { padding: 5px 10px; }
+}

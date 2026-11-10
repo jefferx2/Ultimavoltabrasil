@@ -11,7 +11,14 @@
       <h1>{{ macro.nome }}</h1>
       {% if macro.competicao %}<p class="sub">🏁 {{ macro.competicao }}</p>{% endif %}
     </div>
-    {% if editavel %}<a class="btn btn-contorno" href="{{ url_for('macro_editar', macro_id=macro.id) }}">Editar macrociclo</a>{% endif %}
+    <div class="acoes-topo">
+      {% if editavel %}
+        <a class="btn" href="{{ url_for('semanas', macro_id=macro.id) }}">Treinos semana a semana</a>
+        <a class="btn btn-contorno" href="{{ url_for('macro_editar', macro_id=macro.id) }}">Editar macrociclo</a>
+      {% else %}
+        <a class="btn" href="{{ url_for('aluno_semanas', macro_id=macro.id) }}">Ver treinos da semana</a>
+      {% endif %}
+    </div>
   </div>
   {% if macro.observacoes %}<p class="nota bloco-obs">{{ macro.observacoes }}</p>{% endif %}
 

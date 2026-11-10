@@ -2,7 +2,7 @@
 import os
 import re
 import secrets
-from datetime import date
+from datetime import date, timedelta
 from functools import wraps
 
 import click
@@ -11,6 +11,7 @@ from werkzeug.security import check_password_hash, generate_password_hash
 
 import ciclos
 import db
+import treinos
 
 app = Flask(__name__)
 app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY") or secrets.token_hex(32)
@@ -530,6 +531,231 @@ def fase_mover(user, fase_id):
     return redirect(url_for("macro_ver", macro_id=fase["macrociclo_id"]) + f"#{fase['modalidade']}")
 
 
+# ---------------------------------------------------------------- treinos (professor)
+def _limite_semanas(macro, visao):
+    """Quantas semanas o macrociclo comporta para treinos."""
+    limite = visao["total_semanas"]
+    if macro.get("data_competicao"):
+        limite = max(limite, ciclos.semanas_ate(visao["inicio"], visao["competicao"]) + ciclos.SEMANAS_TRANSICAO)
+    return max(1, limite)
+
+
+def _semana_atual(visao, limite):
+    hoje = date.today()
+    return min(max(1, treinos.semana_de(visao["inicio"], hoje)), limite)
+
+
+def _primeiro_numero(texto):
+    m = re.search(r"\d+", texto or "")
+    return int(m.group()) if m else None
+
+
+def _montar_semana(macro, n):
+    visao = ciclos.montar(macro, _fases_do_macro(macro["id"]))
+    limite = _limite_semanas(macro, visao)
+    if not 1 <= n <= limite:
+        abort(404)
+    ini = treinos.inicio_semana(visao["inicio"], n)
+    por_dia = treinos.carregar(macro["id"], ini, ini + timedelta(days=6))
+    dias = []
+    for i in range(7):
+        d = ini + timedelta(days=i)
+        dias.append({"data": d, "nome": treinos.DIAS[d.weekday()], "curto": treinos.DIAS_CURTOS[d.weekday()],
+                     "treinos": por_dia.get(d.isoformat(), []), "hoje": d == date.today(),
+                     "data_mais7": d + timedelta(days=7)})
+    todos = [t for d in dias for t in d["treinos"]]
+    fases_semana = {}
+    for mod, grupo in visao["grupos"].items():
+        fases_semana[mod] = next((f for f in grupo if f["inicio"] <= ini + timedelta(days=3) <= f["fim"]), None)
+    resumo = {
+        "km": sum(t.get("metros", 0) for t in todos if t["modalidade"] == "corrida") / 1000,
+        "corridas": sum(1 for t in todos if t["modalidade"] == "corrida"),
+        "academias": sum(1 for t in todos if t["modalidade"] == "academia"),
+        "series": sum(t.get("series_total", 0) for t in todos if t["modalidade"] == "academia"),
+    }
+    return {"n": n, "limite": limite, "inicio": ini, "fim": ini + timedelta(days=6), "dias": dias,
+            "fases": fases_semana, "resumo": resumo, "visao": visao}
+
+
+def _treino_do_instrutor(treino_id, instrutor_id):
+    t = db.query_one(
+        "SELECT t.id FROM treinos t JOIN macrociclos m ON m.id = t.macrociclo_id "
+        "JOIN usuarios u ON u.id = m.aluno_id WHERE t.id = ? AND u.instrutor_id = ?", (treino_id, instrutor_id))
+    if not t:
+        abort(404)
+    return treinos.um(treino_id)
+
+
+@app.route("/instrutor/ciclos/<int:macro_id>/semanas")
+@login_obrigatorio("instrutor")
+def semanas(user, macro_id):
+    macro = _macro_do_instrutor(macro_id, user["id"])
+    visao = ciclos.montar(macro, _fases_do_macro(macro_id))
+    return redirect(url_for("semana", macro_id=macro_id, n=_semana_atual(visao, _limite_semanas(macro, visao))))
+
+
+@app.route("/instrutor/ciclos/<int:macro_id>/semanas/<int:n>")
+@login_obrigatorio("instrutor")
+def semana(user, macro_id, n):
+    macro = _macro_do_instrutor(macro_id, user["id"])
+    return render_template("semana.html", macro=macro, s=_montar_semana(macro, n), editavel=True,
+                           fmt_dist=treinos.fmt_distancia)
+
+
+def _data_no_macro(macro, texto):
+    """Valida que a data está dentro das semanas do macrociclo."""
+    visao = ciclos.montar(macro, _fases_do_macro(macro["id"]))
+    limite = _limite_semanas(macro, visao)
+    d, erro = _data(texto, obrigatoria=True)
+    if erro:
+        return None, f"Data {erro}."
+    if not 1 <= treinos.semana_de(visao["inicio"], d) <= limite or d < visao["inicio"]:
+        fim = treinos.inicio_semana(visao["inicio"], limite) + timedelta(days=6)
+        return None, f"A data precisa estar entre {visao['inicio']:%d/%m/%Y} e {fim:%d/%m/%Y}."
+    return d, None
+
+
+@app.route("/instrutor/ciclos/<int:macro_id>/treinos/novo", methods=["GET", "POST"])
+@login_obrigatorio("instrutor")
+def treino_novo(user, macro_id):
+    macro = _macro_do_instrutor(macro_id, user["id"])
+    modalidade = request.values.get("modalidade", "")
+    if modalidade not in ciclos.MODALIDADES:
+        abort(404)
+    if request.method == "POST":
+        dados, itens, erros = treinos.ler_form(request.form, modalidade)
+        d, erro = _data_no_macro(macro, dados["data"])
+        if erro:
+            erros.insert(0, erro)
+        if not erros:
+            with db.Transacao() as t:
+                tid = t.insert("INSERT INTO treinos (macrociclo_id, data, modalidade, titulo, observacoes) "
+                               "VALUES (?, ?, ?, ?, ?)", (macro_id, d.isoformat(), modalidade,
+                                                          dados["titulo"], dados["observacoes"]))
+                treinos.salvar(t, tid, modalidade, itens)
+            flash("Treino salvo.", "ok")
+            return _voltar_semana(macro, d)
+        for e in erros:
+            flash(e, "erro")
+        treino = {**dados, "modalidade": modalidade, "itens": itens}
+    else:
+        d, _ = _data_no_macro(macro, request.args.get("data"))
+        d = d or ciclos.montar(macro, _fases_do_macro(macro_id))["inicio"]
+        treino = {"data": d.isoformat(), "modalidade": modalidade, "itens": []}
+    return _form_treino(user, macro, treino, novo=True)
+
+
+def _voltar_semana(macro, d):
+    ini = date.fromisoformat(macro["data_inicio"])
+    return redirect(url_for("semana", macro_id=macro["id"], n=treinos.semana_de(ini, d)) + f"#d{d.isoformat()}")
+
+
+def _form_treino(user, macro, treino, novo):
+    visao = ciclos.montar(macro, _fases_do_macro(macro["id"]))
+    try:
+        d = date.fromisoformat(treino["data"])
+    except (TypeError, ValueError):
+        d = visao["inicio"]
+    fase = next((f for f in visao["grupos"][treino["modalidade"]] if f["inicio"] <= d <= f["fim"]), None)
+    sugestao = {"series": _primeiro_numero(fase and fase.get("series")) or 3,
+                "repeticoes": (fase and fase.get("repeticoes")) or ""}
+    if not treino["itens"]:
+        treino["itens"] = [{"series": sugestao["series"], "repeticoes": sugestao["repeticoes"]}] if \
+            treino["modalidade"] == "academia" else [{"tipo": "", "repeticoes": 1}]
+    for it in treino["itens"]:
+        if "distancia_m" in it and "distancia" not in it:
+            it["distancia"] = treinos.fmt_distancia(it["distancia_m"])
+    n = min(max(1, treinos.semana_de(visao["inicio"], d)), _limite_semanas(macro, visao))
+    voltar = url_for("semana", macro_id=macro["id"], n=n) + f"#d{d.isoformat()}"
+    return render_template("treino_form.html", macro=macro, treino=treino, novo=novo, fase=fase, voltar=voltar,
+                           sugestao=sugestao, tipos=treinos.TIPOS_CORRIDA,
+                           exercicios=treinos.exercicios_usados(user["id"]),
+                           dia_nome=treinos.DIAS[d.weekday()])
+
+
+@app.route("/instrutor/treinos/<int:treino_id>", methods=["GET", "POST"])
+@login_obrigatorio("instrutor")
+def treino_editar(user, treino_id):
+    treino = _treino_do_instrutor(treino_id, user["id"])
+    macro = _macro_do_instrutor(treino["macrociclo_id"], user["id"])
+    if request.method == "POST":
+        dados, itens, erros = treinos.ler_form(request.form, treino["modalidade"])
+        d, erro = _data_no_macro(macro, dados["data"])
+        if erro:
+            erros.insert(0, erro)
+        validos = {i["id"] for i in treino["itens"]}
+        for it in itens:  # id de item de outro treino é ignorado (vira item novo)
+            if it["id"] not in validos:
+                it["id"] = None
+        if not erros:
+            with db.Transacao() as t:
+                t.execute("UPDATE treinos SET data = ?, titulo = ?, observacoes = ? WHERE id = ?",
+                          (d.isoformat(), dados["titulo"], dados["observacoes"], treino_id))
+                treinos.salvar(t, treino_id, treino["modalidade"], itens)
+            flash("Treino salvo.", "ok")
+            return _voltar_semana(macro, d)
+        for e in erros:
+            flash(e, "erro")
+        treino.update(dados)
+        treino["itens"] = itens
+    return _form_treino(user, macro, treino, novo=False)
+
+
+@app.route("/instrutor/treinos/<int:treino_id>/excluir", methods=["POST"])
+@login_obrigatorio("instrutor")
+def treino_excluir(user, treino_id):
+    treino = _treino_do_instrutor(treino_id, user["id"])
+    macro = _macro_do_instrutor(treino["macrociclo_id"], user["id"])
+    with db.Transacao() as t:
+        for tabela in ("treino_academia", "treino_corrida"):
+            t.execute(f"DELETE FROM {tabela} WHERE treino_id = ?", (treino_id,))
+        t.execute("DELETE FROM treinos WHERE id = ?", (treino_id,))
+    flash("Treino excluído.", "ok")
+    return _voltar_semana(macro, date.fromisoformat(treino["data"]))
+
+
+@app.route("/instrutor/treinos/<int:treino_id>/duplicar", methods=["POST"])
+@login_obrigatorio("instrutor")
+def treino_duplicar(user, treino_id):
+    treino = _treino_do_instrutor(treino_id, user["id"])
+    macro = _macro_do_instrutor(treino["macrociclo_id"], user["id"])
+    d, erro = _data_no_macro(macro, request.form.get("data"))
+    if erro:
+        flash(erro, "erro")
+        return _voltar_semana(macro, date.fromisoformat(treino["data"]))
+    with db.Transacao() as t:
+        treinos.copiar(t, treino, d)
+    flash(f"Treino copiado para {treinos.DIAS[d.weekday()].lower()}, {d:%d/%m}.", "ok")
+    return _voltar_semana(macro, d)
+
+
+@app.route("/instrutor/ciclos/<int:macro_id>/semanas/<int:n>/copiar", methods=["POST"])
+@login_obrigatorio("instrutor")
+def semana_copiar(user, macro_id, n):
+    macro = _macro_do_instrutor(macro_id, user["id"])
+    origem = _montar_semana(macro, n)
+    try:
+        destino = int(request.form.get("destino", ""))
+    except ValueError:
+        destino = 0
+    if not 1 <= destino <= origem["limite"] or destino == n:
+        flash("Escolha uma semana de destino válida.", "erro")
+        return redirect(url_for("semana", macro_id=macro_id, n=n))
+    desloc = timedelta(weeks=destino - n)
+    copiados = 0
+    with db.Transacao() as t:
+        for dia in origem["dias"]:
+            for tr in dia["treinos"]:
+                treinos.copiar(t, tr, dia["data"] + desloc)
+                copiados += 1
+    if copiados:
+        flash(f"{copiados} treino{'s' if copiados != 1 else ''} copiado{'s' if copiados != 1 else ''} "
+              f"da semana {n} para a semana {destino}.", "ok")
+    else:
+        flash("A semana não tem treinos para copiar.", "erro")
+    return redirect(url_for("semana", macro_id=macro_id, n=destino if copiados else n))
+
+
 # ---------------------------------------------------------------- aluno
 def _macro_vigente(aluno_id, hoje=None):
     """Macrociclo em andamento; senão o próximo a começar; senão o mais recente."""
@@ -556,6 +782,36 @@ def _macro_vigente(aluno_id, hoje=None):
 def painel_aluno(user):
     (macro, visao), macros = _macro_vigente(user["id"])
     return render_template("painel_aluno.html", macro=macro, v=visao, macros=macros)
+
+
+@app.route("/aluno/semana")
+@login_obrigatorio("aluno")
+def aluno_semana_atual(user):
+    (macro, visao), _ = _macro_vigente(user["id"])
+    if not macro:
+        return redirect(url_for("painel_aluno"))
+    return redirect(url_for("aluno_semana", macro_id=macro["id"],
+                            n=_semana_atual(visao, _limite_semanas(macro, visao))))
+
+
+@app.route("/aluno/ciclos/<int:macro_id>/semanas")
+@login_obrigatorio("aluno")
+def aluno_semanas(user, macro_id):
+    macro = db.query_one("SELECT * FROM macrociclos WHERE id = ? AND aluno_id = ?", (macro_id, user["id"]))
+    if not macro:
+        abort(404)
+    visao = ciclos.montar(macro, _fases_do_macro(macro_id))
+    return redirect(url_for("aluno_semana", macro_id=macro_id, n=_semana_atual(visao, _limite_semanas(macro, visao))))
+
+
+@app.route("/aluno/ciclos/<int:macro_id>/semanas/<int:n>")
+@login_obrigatorio("aluno")
+def aluno_semana(user, macro_id, n):
+    macro = db.query_one("SELECT * FROM macrociclos WHERE id = ? AND aluno_id = ?", (macro_id, user["id"]))
+    if not macro:
+        abort(404)
+    return render_template("semana.html", macro=macro, s=_montar_semana(macro, n), editavel=False,
+                           fmt_dist=treinos.fmt_distancia)
 
 
 @app.route("/aluno/ciclos/<int:macro_id>")
