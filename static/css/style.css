@@ -1,3 +1,4 @@
+[hidden] { display: none !important; }
 :root {
   --vermelho: #d7262e;
   --vermelho-esc: #a91c23;
@@ -370,3 +371,44 @@ input.pace-auto { background: #f6fbf7; }
 .leg-grupo { font: 600 .72rem "Barlow", sans-serif; text-transform: uppercase; letter-spacing: .06em; color: var(--cinza); margin-left: 6px; }
 .grafico > .leg-nota { display: block; font-size: .8rem; margin-top: 6px; }
 .alerta-fase { color: var(--vermelho-esc) !important; font-weight: 600; }
+
+/* ---- Jack Daniels ---- */
+.tabela-faixas { width: 100%; border-collapse: collapse; font-size: .82rem; margin-top: 8px; }
+.tabela-faixas th, .tabela-faixas td { padding: 5px 8px; border-bottom: 1px solid var(--borda); text-align: left; font-weight: 400; }
+.tabela-faixas th { color: var(--cinza); font-size: .72rem; text-transform: uppercase; letter-spacing: .04em; }
+.tabela-faixas tr.atual td:first-child { font-weight: 700; }
+.tabela-faixas td.sel { background: var(--vermelho); color: #fff; font-weight: 700; border-radius: 4px; }
+.vdot-topo { display: flex; gap: 18px; align-items: center; margin: 6px 0 12px; }
+.vdot-num { background: var(--preto); color: #fff; border-radius: 6px; padding: 8px 16px; display: grid; text-align: center; }
+.vdot-num span { font: 600 .7rem "Barlow", sans-serif; letter-spacing: .1em; color: #bbb; }
+.vdot-num b { font: 800 2rem "Barlow Condensed", sans-serif; line-height: 1; }
+.tabela-zonas td, .tabela-zonas th { white-space: nowrap; }
+.zbadge { display: inline-block; min-width: 22px; text-align: center; font-weight: 800; font-size: .78rem; border-radius: 4px; padding: 1px 6px; color: #fff; }
+.z-E { background: #5a9e6f; } .z-M { background: #3d7ea6; } .z-T { background: #e0a100; } .z-I { background: #e8742a; } .z-R { background: var(--vermelho); }
+.sec-peq { font-size: 1.05rem; margin: 22px 0 8px; }
+.form-aval { display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-end; }
+.form-aval label { min-width: 130px; }
+.form-aval .larga { flex: 1 1 200px; }
+.tabela-aval { margin-top: 12px; }
+.tabela-aval tr.atual td { background: #f6fbf7; }
+.tabela-aval small { color: #1e6b3a; font-weight: 600; }
+.paces-aluno .agora-mod { flex-basis: 100%; }
+.paces-aluno { display: flex; flex-wrap: wrap; gap: 6px 16px; align-items: center; background: var(--claro); border-radius: 6px; padding: 10px 14px; margin: 10px 0 4px; font-size: .9rem; }
+.paces-aluno > span { white-space: nowrap; }
+.sel-zona { min-width: 56px; }
+.zonas-semana { border: 1px solid var(--borda); border-radius: 6px; padding: 12px 14px; margin: -10px 0 22px; }
+.zs-barra { display: flex; height: 18px; border-radius: 4px; overflow: hidden; margin: 8px 0; }
+.zs-barra span { color: #fff; font-size: .7rem; font-weight: 800; display: flex; align-items: center; justify-content: center; overflow: hidden; }
+.zs-itens { display: flex; flex-wrap: wrap; gap: 6px 18px; font-size: .88rem; }
+.zs-itens small { color: var(--cinza); }
+.lim-ok { color: #1e6b3a !important; }
+.lim-fora { color: var(--vermelho-esc) !important; font-weight: 700; }
+.zonas-semana .alerta { margin: 10px 0 0; }
+.zona-presumida { opacity: .55; }
+.blocos .zbadge { font-size: .66rem; min-width: 18px; padding: 0 4px; margin-right: 2px; vertical-align: 1px; }
+
+.tabela-faixas-wrap { overflow-x: auto; }
+@media (max-width: 640px) {
+  .form-aval label { min-width: 0; flex: 1 1 140px; }
+  .vdot-topo { align-items: flex-start; }
+}

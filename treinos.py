@@ -2,6 +2,7 @@
 import re
 from datetime import date, timedelta
 
+import daniels
 import db
 
 TIPOS_CORRIDA = ["Aquecimento", "Educativos", "Rodagem", "Regenerativo", "Longão", "Progressivo", "Fartlek",
@@ -14,7 +15,7 @@ DIAS_CURTOS = ["seg", "ter", "qua", "qui", "sex", "sáb", "dom"]
 
 CAMPOS = {
     "academia": ("exercicio", "series", "repeticoes", "carga", "descanso", "observacao"),
-    "corrida": ("tipo", "repeticoes", "distancia", "duracao", "pace", "recuperacao", "observacao"),
+    "corrida": ("tipo", "zona", "repeticoes", "distancia", "duracao", "pace", "recuperacao", "observacao"),
 }
 
 
@@ -188,23 +189,46 @@ def fmt_kg(kg):
     return f"{kg:,.0f}".replace(",", ".") + " kg"
 
 
-def metricas_semanais(lista, inicio):
-    """Soma por semana do macrociclo (1, 2, ...) os dados usados no gráfico planejado.
-    corrida:  metros, segundos (todos), segundos_qualidade
+def zona_do_bloco(item, paces=None):
+    """Zona de Daniels do bloco: a escolhida; senão pelo pace (com os paces do aluno); senão pelo tipo."""
+    if item.get("zona") in daniels.ZONAS:
+        return item["zona"]
+    if paces:
+        seg_km = ler_pace(item.get("pace"))
+        dist = item.get("distancia_m")
+        if not seg_km and dist:  # "72 s" = tempo da repetição -> pace
+            rep = ler_duracao(item.get("pace")) if "/km" not in (item.get("pace") or "").lower() else None
+            seg_km = rep / dist * 1000 if rep else None
+        if not seg_km and dist and ler_duracao(item.get("duracao")):
+            seg_km = ler_duracao(item.get("duracao")) / dist * 1000
+        if seg_km:
+            return daniels.zona_do_pace(seg_km, paces)
+    return daniels.ZONA_DO_TIPO.get(item.get("tipo"), "E")
+
+
+def metricas_semanais(lista, inicio, paces=None):
+    """Soma por semana do macrociclo (1, 2, ...) os dados do gráfico planejado e dos limites de Daniels.
+    corrida:  metros, segundos, pontos (intensidade de Daniels) e metros/segundos por zona
     academia: series, reps_x_series e series_com_reps (para a média de reps por série)"""
     sem = {"corrida": {}, "academia": {}}
     for t in lista:
         w = semana_de(inicio, date.fromisoformat(t["data"]))
         if t["modalidade"] == "corrida":
-            m = sem["corrida"].setdefault(w, {"metros": 0, "segundos": 0.0, "segundos_qualidade": 0.0})
+            m = sem["corrida"].setdefault(w, {"metros": 0, "segundos": 0.0, "pontos": 0.0,
+                                              "zonas": {z: {"metros": 0, "segundos": 0.0} for z in daniels.ZONAS}})
             for i in t["itens"]:
                 reps = i.get("repeticoes") or 1
                 dist = i.get("distancia_m") or 0
+                z = zona_do_bloco(i, paces)
+                tempo = tempo_bloco(i)
+                if not tempo and dist:
+                    tempo = dist / 1000 * (paces[z] if paces else PACE_PADRAO)
+                tempo = (tempo or 0) * reps
                 m["metros"] += dist * reps
-                tempo = tempo_bloco(i) or (dist / 1000 * PACE_PADRAO if dist else 0)
-                m["segundos"] += tempo * reps
-                if i.get("tipo") in TIPOS_QUALIDADE:
-                    m["segundos_qualidade"] += tempo * reps
+                m["segundos"] += tempo
+                m["pontos"] += tempo / 60 * daniels.PONTOS_POR_MIN[z]
+                m["zonas"][z]["metros"] += dist * reps
+                m["zonas"][z]["segundos"] += tempo
         else:
             m = sem["academia"].setdefault(w, {"series": 0, "reps_x_series": 0.0, "series_com_reps": 0})
             for i in t["itens"]:
@@ -214,6 +238,10 @@ def metricas_semanais(lista, inicio):
                 if r is not None:
                     m["reps_x_series"] += r * sr
                     m["series_com_reps"] += sr
+    for m in sem["corrida"].values():
+        km = m["metros"] / 1000
+        m["limites"] = daniels.limites_semana(km, {z: v["metros"] / 1000 for z, v in m["zonas"].items()})
+        m["fora_limite"] = [z for z, l in m["limites"].items() if not l["ok"]]
     return sem
 
 
@@ -276,7 +304,7 @@ def ler_form(form, modalidade):
     for i, item_id in enumerate(ids):
         linha = {c: (colunas[c][i] if i < len(colunas[c]) else "").strip() for c in CAMPOS[modalidade]}
         principal = linha["exercicio"] if modalidade == "academia" else linha["tipo"]
-        if not principal and not any(v for k, v in linha.items() if k not in ("tipo", "series", "repeticoes")):
+        if not principal and not any(v for k, v in linha.items() if k not in ("tipo", "zona", "series", "repeticoes")):
             continue  # linha em branco
         n = len(itens) + 1
         item = {"id": int(item_id) if item_id.isdigit() else None, **{k: v or None for k, v in linha.items()}}
@@ -305,6 +333,8 @@ def ler_form(form, modalidade):
                 erros.append(f"Bloco {n}: distância “{linha['distancia']}” não entendida (ex.: 400, 1,5 km, 8 km).")
             if not item["distancia_m"] and not item["duracao"] and principal:
                 erros.append(f"Bloco {n}: informe a distância ou a duração.")
+            if item["zona"] and item["zona"] not in daniels.ZONAS:
+                item["zona"] = None
         itens.append(item)
     if not itens:
         erros.append("Adicione pelo menos um " + ("exercício." if modalidade == "academia" else "bloco."))
@@ -322,10 +352,11 @@ def salvar(t, treino_id, modalidade, itens):
             sets = "ordem = ?, exercicio = ?, series = ?, repeticoes = ?, carga = ?, descanso = ?, observacao = ?"
             cols = "ordem, exercicio, series, repeticoes, carga, descanso, observacao"
         else:
-            valores = (ordem, it["tipo"], it["repeticoes"], it["distancia_m"], it["duracao"], it["pace"],
+            valores = (ordem, it["tipo"], it.get("zona"), it["repeticoes"], it["distancia_m"], it["duracao"], it["pace"],
                        it["recuperacao"], it["observacao"])
-            sets = "ordem = ?, tipo = ?, repeticoes = ?, distancia_m = ?, duracao = ?, pace = ?, recuperacao = ?, observacao = ?"
-            cols = "ordem, tipo, repeticoes, distancia_m, duracao, pace, recuperacao, observacao"
+            sets = ("ordem = ?, tipo = ?, zona = ?, repeticoes = ?, distancia_m = ?, duracao = ?, pace = ?, "
+                    "recuperacao = ?, observacao = ?")
+            cols = "ordem, tipo, zona, repeticoes, distancia_m, duracao, pace, recuperacao, observacao"
         if it.get("id") in existentes:
             t.execute(f"UPDATE {tabela} SET {sets} WHERE id = ?", (*valores, it["id"]))
             manter.add(it["id"])

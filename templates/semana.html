@@ -5,11 +5,13 @@
 {% block conteudo %}
 {% from "_volume.html" import vol %}
 {% macro bloco_corrida(b) -%}
+  <span class="zbadge z-{{ b.zona_calc }}{{ ' zona-presumida' if not b.zona }}" title="{{ 'Zona ' ~ b.zona_calc ~ (' (escolhida)' if b.zona else ' (pelo pace ou tipo)') }}">{{ b.zona_calc }}</span>
   <b>{{ b.tipo }}</b>
   {%- if b.repeticoes > 1 %} {{ b.repeticoes }}×{% endif %}
   {%- if b.distancia_m %} {{ fmt_dist(b.distancia_m) }}{% endif %}
   {%- if b.duracao %} {{ b.duracao }}{% endif %}
   {%- if b.pace %} <span class="pace">@ {{ b.pace }}</span>{% endif %}
+  {%- if b.pace_s and b.distancia_m and b.distancia_m < 1000 and b.repeticoes > 1 %} <span class="rec">({{ d_.tempo_rep(b.pace_s, b.distancia_m) }}/{{ b.distancia_m }} m)</span>{% endif %}
   {%- if b.recuperacao %} <span class="rec">· rec. {{ b.recuperacao }}</span>{% endif %}
   {%- if b.observacao %}<small>{{ b.observacao }}</small>{% endif %}
 {%- endmacro %}
@@ -52,6 +54,29 @@
       <span>Academia: {{ vol('academia', s.resumo.academia, sessoes=true) if s.resumo.academia.sessoes else 'sem sessões' }}</span>
     </div>
   </div>
+
+  {% if s.zonas and s.zonas.metros %}
+  {% set km_total = s.zonas.metros / 1000 %}
+  <div class="zonas-semana">
+    <div class="zs-topo">
+      <span class="agora-mod">Corrida por zona (Daniels){% if s.perfil.vdot %} · VDOT {{ ('%.1f' % s.perfil.vdot) | replace('.', ',') }}{% else %} · sem VDOT: zonas pelo tipo do bloco{% endif %}</span>
+    </div>
+    <div class="zs-barra">
+      {% for z in d_.ZONAS %}{% set m = s.zonas.zonas[z].metros %}{% if m %}
+        <span class="z-{{ z }}" style="width: {{ '%.2f' % (100 * m / s.zonas.metros) }}%" title="{{ z }}: {{ m | km }}">{{ z }}</span>
+      {% endif %}{% endfor %}
+    </div>
+    <div class="zs-itens">
+      {% for z in d_.ZONAS %}{% set m = s.zonas.zonas[z].metros %}
+        <span><span class="zbadge z-{{ z }}">{{ z }}</span> {{ m | km }} <small>({{ '%d' % (100 * m / s.zonas.metros) }}%)</small>
+          {% if z in s.zonas.limites %}{% set l = s.zonas.limites[z] %}
+            <small class="{{ 'lim-ok' if l.ok else 'lim-fora' }}">{{ '✓' if l.ok else '▲' }} limite {{ l.limite_txt }} = {{ (l.limite_km * 1000) | km }}</small>
+          {% endif %}</span>
+      {% endfor %}
+    </div>
+    {% if s.zonas.fora_limite %}<p class="alerta alerta-aviso">Acima do limite semanal de Daniels em: <b>{{ s.zonas.fora_limite | join(', ') }}</b>. Reduza o volume dessas zonas ou distribua em outra semana.</p>{% endif %}
+  </div>
+  {% endif %}
 
   <div class="dias">
     {% for d in s.dias %}

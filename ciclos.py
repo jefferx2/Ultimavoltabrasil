@@ -189,8 +189,10 @@ def grafico(fases, total_semanas, inicio=None, plan=None, acima=None,
     plan_pts, plan_path = {}, {}
     for campo in ("volume", "intensidade"):
         semanas = sorted(s_ for s_ in plan[campo] if 1 <= s_ <= total_semanas)
+        fora = plan.get("fora_limite", {}) if campo == "intensidade" else {}
         plan_pts[campo] = [{"x": x_sem(s_ - 0.5), "y": y(plan[campo][s_]), "semana": s_,
-                            "nivel": plan[campo][s_], "acima": s_ in acima[campo]} for s_ in semanas]
+                            "nivel": plan[campo][s_], "acima": s_ in acima[campo] or s_ in fora,
+                            "metodologia": s_ in acima[campo], "fora": fora.get(s_, [])} for s_ in semanas]
         d, anterior = "", None
         for pt in plan_pts[campo]:
             d += (" L" if anterior is not None and pt["semana"] == anterior + 1 else " M") + f"{pt['x']:.1f},{pt['y']:.1f}"
@@ -223,8 +225,9 @@ def grafico(fases, total_semanas, inicio=None, plan=None, acima=None,
 # Intensidade da academia pela média de repetições por série (mesma lógica da tabela do modelo):
 # 15–20 reps = baixa (2) · 8–10 = moderada (3) · 4–6 = alta (4) · 1–3 = muito alta (5)
 ANCORAS_REPS = [(20, 1.5), (17.5, 2), (9, 3), (5, 4), (2, 5)]
-# Intensidade da corrida pela % do tempo em blocos de qualidade
-ANCORAS_QUALIDADE = [(0, 1.5), (10, 2), (20, 3), (30, 4), (40, 5)]
+# Intensidade da corrida pelos pontos de Daniels por minuto (E 0,2 · M 0,4 · T 0,6 · I 1,0 · R 1,5):
+# só E = 0,2 (baixa, 2) · 0,3 = moderada (3) · 0,4 = alta (4) · 0,5 ou mais = muito alta (5)
+ANCORAS_PONTOS = [(0.2, 2), (0.3, 3), (0.4, 4), (0.5, 5)]
 TOLERANCIA = 0.5  # acima da metodologia por mais que isso = alerta
 
 
@@ -244,7 +247,7 @@ def niveis_planejados(metricas, modalidade, referencia=None):
     Volume: nível = 5 × valor / referência (referência = valor do nível 5). Sem referência: maior semana planejada."""
     if modalidade == "corrida":
         vol = {w: m["metros"] / 1000 for w, m in metricas.items()}
-        intens = {w: _interpolar(100 * m["segundos_qualidade"] / m["segundos"], ANCORAS_QUALIDADE)
+        intens = {w: _interpolar(m["pontos"] / (m["segundos"] / 60), ANCORAS_PONTOS)
                   for w, m in metricas.items() if m["segundos"]}
     else:
         vol = {w: m["series"] for w, m in metricas.items()}
@@ -253,7 +256,9 @@ def niveis_planejados(metricas, modalidade, referencia=None):
     relativa = not referencia
     ref = referencia or max(vol.values(), default=0)
     niveis_vol = {w: 5 * v / ref for w, v in vol.items()} if ref else {}
-    return {"volume": niveis_vol, "intensidade": intens, "bruto": vol, "referencia": ref, "relativa": relativa}
+    fora = {w: m["fora_limite"] for w, m in metricas.items() if m.get("fora_limite")}
+    return {"volume": niveis_vol, "intensidade": intens, "bruto": vol, "referencia": ref, "relativa": relativa,
+            "fora_limite": fora}
 
 
 def nivel_da_semana(fases, semana, campo):
@@ -271,7 +276,9 @@ def excessos(fases, plan):
             meta = nivel_da_semana(fases, w, campo)
             if meta is not None and nivel > meta + TOLERANCIA:
                 acima[campo].add(w)
+    fora = plan.get("fora_limite", {})
     for f in fases:
         semanas = range(f["semana_ini"], f["semana_ini"] + f["semanas"])
         f["acima"] = {c: sum(1 for w in semanas if w in acima[c]) for c in acima}
+        f["acima"]["daniels"] = sum(1 for w in semanas if w in fora)
     return acima

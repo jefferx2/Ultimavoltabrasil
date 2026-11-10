@@ -21,6 +21,39 @@
         <input name="prova_principal" list="provas" placeholder="ex.: 800 m" value="{{ aluno.prova_principal or '' }}">
         <datalist id="provas">{% for p in provas %}<option value="{{ p }}">{% endfor %}</datalist>
       </label>
+      <fieldset class="col-2 caixa-opcoes">
+        <legend>Anamnese (metodologia Jack Daniels)</legend>
+        <div class="grade">
+          <label>Prova-alvo (faixa de volume)
+            <select name="prova_categoria">
+              <option value="">—</option>
+              {% for k, f in d.FAIXAS.items() %}<option value="{{ k }}" {{ 'selected' if aluno.prova_categoria == k }}>{{ f.rotulo }}</option>{% endfor %}
+            </select>
+          </label>
+          <label>Nível do aluno nessa prova
+            <select name="nivel">
+              <option value="">—</option>
+              {% for k, rot in d.NIVEIS_ALUNO.items() %}<option value="{{ k }}" {{ 'selected' if aluno.nivel == k }}>{{ rot }}</option>{% endfor %}
+            </select>
+          </label>
+          <label>Volume semanal atual (km)
+            <input name="volume_atual_km" inputmode="decimal" placeholder="média das últimas 4 semanas" value="{{ aluno.volume_atual_km | numero }}">
+          </label>
+          <label>Dias disponíveis por semana
+            <input name="dias_semana" type="number" min="1" max="7" value="{{ aluno.dias_semana or '' }}">
+          </label>
+        </div>
+        <div class="tabela-faixas-wrap"><table class="tabela-faixas">
+          <tr><th>Prova</th>{% for k, rot in d.NIVEIS_ALUNO.items() %}<th>{{ rot.split(' (')[0] }}</th>{% endfor %}</tr>
+          {% for k, f in d.FAIXAS.items() %}
+          <tr class="{{ 'atual' if aluno.prova_categoria == k }}"><td>{{ f.rotulo }}</td>
+            {% for n in d.NIVEIS_ALUNO %}{% set lo, hi = f[n] %}
+              <td class="{{ 'sel' if aluno.prova_categoria == k and aluno.nivel == n }}">{{ lo if lo == hi else lo ~ '–' ~ hi }} km</td>
+            {% endfor %}</tr>
+          {% endfor %}
+        </table></div>
+        <small>Faixas de km/semana por prova e nível. O topo da faixa do aluno é usado como volume 5 (pico) no gráfico dos ciclos.</small>
+      </fieldset>
       <label class="col-2">Telefone / WhatsApp
         <input name="telefone" value="{{ aluno.telefone or '' }}">
       </label>
@@ -41,6 +74,84 @@
   </form>
 
   {% if not novo %}
+  <div class="zona" id="daniels">
+    <h2>Ritmos de treino (VDOT)</h2>
+    {% if perfil.vdot %}
+      {% set p = perfil.paces %}
+      {% set av = perfil.avaliacao %}
+      <div class="vdot-topo">
+        <div class="vdot-num"><span>VDOT</span><b>{{ ('%.1f' % perfil.vdot) | replace('.', ',') }}</b></div>
+        <p class="nota">Pela {{ 'prova' if av.tipo == 'prova' else 'avaliação' }} de {{ av.data | data_br }}:
+          {{ ((av.distancia_m) | km) if av.distancia_m >= 1000 else av.distancia_m ~ ' m' }} em {{ av.tempo_s | tempo }}{% if av.descricao %} ({{ av.descricao }}){% endif %}.
+          {% set dias = (hoje | dias_desde(av.data)) %}{% if dias > 42 %}<b class="alerta-fase">Avaliação com mais de 6 semanas: considere um novo teste.</b>{% endif %}</p>
+      </div>
+      <div class="tabela-wrap">
+        <table class="tabela tabela-zonas">
+          <thead><tr><th>Zona</th><th>Pace /km</th><th>200 m</th><th>400 m</th><th>800 m</th><th>1000 m</th><th>Limite semanal</th></tr></thead>
+          <tbody>
+            <tr><td><span class="zbadge z-E">E</span> {{ d.NOMES_ZONAS.E }}</td><td><b>{{ p.E_faixa[0] | pace }} – {{ p.E_faixa[1] | pace }}</b></td><td colspan="4" class="mudo">rodagens, longões, aquecimento e regenerativos</td><td>—</td></tr>
+            {% for z in ['M', 'T', 'I', 'R'] %}
+            <tr><td><span class="zbadge z-{{ z }}">{{ z }}</span> {{ d.NOMES_ZONAS[z] }}</td><td><b>{{ p[z] | pace }}</b></td>
+              {% for m in (200, 400, 800, 1000) %}<td>{{ d.tempo_rep(p[z], m) }}</td>{% endfor %}
+              <td>{% if z in d.LIMITES %}≤ {{ (d.LIMITES[z][0] * 100) | int }}%{% if d.LIMITES[z][1] %} ou {{ d.LIMITES[z][1] | int }} km{% endif %}{% else %}—{% endif %}</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      <p class="nota">Provas equivalentes:
+        {% for nome, m in (('1500 m', 1500), ('3 km', 3000), ('5 km', 5000), ('10 km', 10000), ('Meia', 21097), ('Maratona', 42195)) %}
+          {{ nome }} <b>{{ d.prever_tempo(perfil.vdot, m) | tempo }}</b>{{ ' · ' if not loop.last }}
+        {% endfor %}</p>
+    {% else %}
+      <p class="nota">Registre um tempo recente (prova ou teste) para calcular o VDOT e os paces de treino do aluno.</p>
+    {% endif %}
+    {% if perfil.faixa %}<p class="nota">Faixa de volume: <b>{{ perfil.faixa.rotulo }} · {{ perfil.faixa.nivel }} → {{ perfil.faixa.texto }}</b>
+      {% if aluno.volume_atual_km %} · volume atual {{ aluno.volume_atual_km | numero }} km/sem{% endif %}{% if aluno.dias_semana %} · {{ aluno.dias_semana }} dias/semana{% endif %}</p>{% endif %}
+
+    <h3 class="sec-peq">Registrar tempo recente</h3>
+    <form method="post" action="{{ url_for('avaliacao_nova', aluno_id=aluno.id) }}" class="form form-aval">
+      <input type="hidden" name="csrf" value="{{ csrf_token }}">
+      <label>Data<input type="date" name="data" max="{{ hoje }}" value="{{ hoje }}" required></label>
+      <label>Distância
+        <select name="distancia" id="aval-dist" required>
+          {% for k, (rot, m) in d.DISTANCIAS_AVALIACAO.items() %}<option value="{{ k }}" {{ 'selected' if k == '5000' }}>{{ rot }}</option>{% endfor %}
+        </select>
+      </label>
+      <label id="aval-tempo">Tempo<input name="tempo" placeholder="24:30 ou 1:35:20"></label>
+      <label id="aval-cooper" hidden>Distância em 12 min<input name="distancia_cooper" placeholder="2800 ou 2,8 km"></label>
+      <label>Tipo<select name="tipo"><option value="prova">Prova</option><option value="teste">Teste / contra-relógio</option></select></label>
+      <label class="larga">Observação<input name="descricao" placeholder="ex.: prova X, pista, plano"></label>
+      <button class="btn btn-peq" type="submit">Registrar</button>
+    </form>
+    <p class="nota">Use uma prova das últimas 4 a 6 semanas, em terreno plano e com esforço máximo. Não use recorde antigo se o aluno estiver destreinado, nem a estimativa de VO2máx do relógio.</p>
+
+    {% if avaliacoes %}
+    <div class="tabela-wrap"><table class="tabela tabela-aval">
+      <thead><tr><th>Data</th><th>Distância</th><th>Tempo</th><th>Tipo</th><th>VDOT</th><th></th></tr></thead>
+      <tbody>
+        {% for a in avaliacoes %}
+        <tr class="{{ 'atual' if loop.first }}">
+          <td>{{ a.data | data_br }}</td>
+          <td>{{ (a.distancia_m | km) if a.distancia_m >= 1000 else a.distancia_m ~ ' m' }}{% if a.tempo_s == 720 and a.tipo == 'teste' %} (12 min){% endif %}</td>
+          <td>{{ a.tempo_s | tempo }}</td><td>{{ a.tipo | capitalize }}{% if a.descricao %} · {{ a.descricao }}{% endif %}</td>
+          <td><b>{{ ('%.1f' % a.vdot) | replace('.', ',') }}</b>{% if loop.first %} <small>em uso</small>{% endif %}</td>
+          <td class="acoes"><form method="post" action="{{ url_for('avaliacao_excluir', aval_id=a.id) }}" onsubmit="return confirm('Excluir esta avaliação?')">
+            <input type="hidden" name="csrf" value="{{ csrf_token }}"><button class="link-btn">Excluir</button></form></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table></div>
+    {% endif %}
+  </div>
+  <script>
+    (function () {
+      const sel = document.getElementById('aval-dist');
+      const t = document.getElementById('aval-tempo'), c = document.getElementById('aval-cooper');
+      const troca = () => { const coop = sel.value === 'cooper'; t.hidden = coop; c.hidden = !coop; };
+      sel.addEventListener('change', troca); troca();
+    })();
+  </script>
+
   <div class="zona" id="ciclos">
     <div class="cabecalho">
       <h2>Macrociclos</h2>

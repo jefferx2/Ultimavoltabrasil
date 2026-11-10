@@ -12,6 +12,13 @@
       <a class="btn" href="{{ url_for('aluno_semanas', macro_id=macro.id) }}">Treinos da semana</a>
     </div>
     {% if macro.observacoes %}<p class="nota bloco-obs">{{ macro.observacoes }}</p>{% endif %}
+  {% if perfil.paces %}
+  <div class="paces-aluno paces-painel">
+    <span class="agora-mod">Seus ritmos de treino · VDOT {{ ('%.1f' % perfil.vdot) | replace('.', ',') }} ({{ perfil.avaliacao.data | data_br }})</span>
+    <span><span class="zbadge z-E">E</span> {{ perfil.paces.E_faixa[0] | pace }}–{{ perfil.paces.E_faixa[1] | pace }}</span>
+    {% for z in ['M', 'T', 'I', 'R'] %}<span><span class="zbadge z-{{ z }}">{{ z }}</span> {{ perfil.paces[z] | pace }}{% if z in ('I', 'R') %} · {{ d.tempo_rep(perfil.paces[z], 400) }}/400 m{% endif %}</span>{% endfor %}
+  </div>
+  {% endif %}
     {% set editavel = false %}
     {% include "_ciclo_visual.html" %}
 
@@ -28,6 +35,13 @@
     {% endif %}
   {% else %}
     <h1>Olá, {{ usuario.nome.split()[0] }}</h1>
+  {% if perfil.paces %}
+  <div class="paces-aluno paces-painel">
+    <span class="agora-mod">Seus ritmos de treino · VDOT {{ ('%.1f' % perfil.vdot) | replace('.', ',') }} ({{ perfil.avaliacao.data | data_br }})</span>
+    <span><span class="zbadge z-E">E</span> {{ perfil.paces.E_faixa[0] | pace }}–{{ perfil.paces.E_faixa[1] | pace }}</span>
+    {% for z in ['M', 'T', 'I', 'R'] %}<span><span class="zbadge z-{{ z }}">{{ z }}</span> {{ perfil.paces[z] | pace }}{% if z in ('I', 'R') %} · {{ d.tempo_rep(perfil.paces[z], 400) }}/400 m{% endif %}</span>{% endfor %}
+  </div>
+  {% endif %}
     <div class="vazio">
       <p>Seu professor ainda não montou o seu macrociclo.<br>Assim que estiver pronto, ele aparece aqui.</p>
     </div>

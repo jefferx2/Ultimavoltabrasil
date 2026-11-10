@@ -21,6 +21,10 @@
       {% for tp in tipos %}<option {{ 'selected' if it.tipo == tp }}>{{ tp }}</option>{% endfor %}
       {% if it.tipo and it.tipo not in tipos %}<option selected>{{ it.tipo }}</option>{% endif %}
     </select></td>
+    <td><select name="zona" class="w-xs sel-zona">
+      <option value="">—</option>
+      {% for z in d.ZONAS %}<option value="{{ z }}" {{ 'selected' if it.zona == z }}>{{ z }}</option>{% endfor %}
+    </select></td>
     <td><input name="repeticoes" type="number" min="1" max="100" value="{{ it.repeticoes or 1 }}" class="w-xs"></td>
     <td><input name="distancia" value="{{ it.distancia or '' }}" placeholder="400 / 8 km" class="w-s"></td>
     <td><input name="duracao" value="{{ it.duracao or '' }}" placeholder="20 min" class="w-s"></td>
@@ -40,6 +44,18 @@
     · int. {{ NIVEIS[fase.intensidade] | lower }}{% if fase.intensidade_ref %} ({{ fase.intensidade_ref }}){% endif %}
     · vol. {{ NIVEIS_VOLUME[fase.volume] | lower }}{% if fase.volume_ref %} ({{ fase.volume_ref }}){% endif %}
   </p>
+  {% endif %}
+
+  {% if not acad %}
+  <div class="paces-aluno">
+    {% if perfil.paces %}
+      <span class="agora-mod">Paces de {{ macro.aluno_nome.split()[0] }} · VDOT {{ ('%.1f' % perfil.vdot) | replace('.', ',') }}</span>
+      <span><span class="zbadge z-E">E</span> {{ perfil.paces.E_faixa[0] | pace }}–{{ perfil.paces.E_faixa[1] | pace }}</span>
+      {% for z in ['M', 'T', 'I', 'R'] %}<span><span class="zbadge z-{{ z }}">{{ z }}</span> {{ perfil.paces[z] | pace }}{% if z in ('I', 'R') %} · {{ d.tempo_rep(perfil.paces[z], 400) }}/400{% endif %}</span>{% endfor %}
+    {% else %}
+      <span class="nota">Sem VDOT: registre um tempo recente na <a href="{{ url_for('aluno_editar', aluno_id=macro.aluno_id) }}#daniels">ficha do aluno</a> para a zona preencher o pace.</span>
+    {% endif %}
+  </div>
   {% endif %}
 
   <form method="post" class="form" id="form-treino">
@@ -64,7 +80,7 @@
             {% if acad %}
               <th>Exercício *</th><th>Séries *</th><th>Repetições</th><th>Carga sugerida</th><th>Descanso</th><th>Observação</th>
             {% else %}
-              <th>Tipo *</th><th>Rep.</th><th>Distância</th><th>Duração</th><th>Ritmo / pace</th><th>Recuperação</th><th>Observação</th>
+              <th>Tipo *</th><th title="Zona de Daniels">Zona</th><th>Rep.</th><th>Distância</th><th>Duração</th><th>Ritmo / pace</th><th>Recuperação</th><th>Observação</th>
             {% endif %}
             <th></th>
           </tr>
@@ -80,7 +96,7 @@
       <p class="nota">A tonelagem (séries × repetições × carga) é calculada quando a carga está em kg (ex.: 60 kg). Faixas como 8–10 contam pela média.</p>
     {% else %}
       <p class="nota">Distância: <b>400</b> = 400 m · <b>1,5 km</b> · <b>8</b> = 8 km. Duração: <b>72 s</b>, <b>1:12</b>, <b>1 min 30</b>, <b>20 min</b>, <b>1h10</b>.
-        Com distância e duração preenchidas, o pace é calculado sozinho (fundo verde). Se você digitar o pace, ele é mantido.</p>
+        Escolher a <b>zona</b> preenche o pace do aluno; com distância e duração, o pace é calculado pela duração (fundo verde). Se você digitar o pace, ele é mantido.</p>
     {% endif %}
 
     <label class="bloco-campo">Orientações gerais
@@ -150,15 +166,23 @@ const UV = {
 (function () {
   const corpo = document.getElementById('itens');
   const ACAD = {{ 'true' if acad else 'false' }};
+  const ZONAS_PACE = {{ perfil.zonas_js | tojson }};
+  const ZONA_TIPO = {{ d.ZONA_DO_TIPO | tojson }};
   const val = (tr, n) => (tr.querySelector(`[name="${n}"]`) || {}).value || '';
 
+  // Pace automático: 1) duração + distância  2) pace da zona do aluno. Pace digitado à mão nunca é alterado.
   function paceAuto(tr) {
     const campo = tr.querySelector('[name="pace"]');
     if (!campo || (campo.value && campo.dataset.auto !== '1')) return;
-    const d = UV.dist(val(tr, 'distancia')), s = UV.dur(val(tr, 'duracao'));
-    if (d && s) { campo.value = UV.fmtPace(s / (d / 1000)); campo.dataset.auto = '1'; campo.classList.add('pace-auto'); }
-    else if (campo.dataset.auto === '1') { campo.value = ''; }
+    const d = UV.dist(val(tr, 'distancia')), s = UV.dur(val(tr, 'duracao')), z = val(tr, 'zona');
+    let novo = '';
+    if (d && s) novo = UV.fmtPace(s / (d / 1000));
+    else if (z && ZONAS_PACE[z]) novo = UV.fmtPace(ZONAS_PACE[z]);
+    campo.value = novo;
+    if (novo) { campo.dataset.auto = '1'; campo.classList.add('pace-auto'); }
+    else { delete campo.dataset.auto; campo.classList.remove('pace-auto'); }
   }
+
 
   function volume() {
     let txt = '—', nota = '';
@@ -201,7 +225,15 @@ const UV = {
     if (ev.target.name === 'distancia' || ev.target.name === 'duracao') paceAuto(tr);
     volume();
   });
-  corpo.addEventListener('change', volume);
+  corpo.addEventListener('change', (ev) => {
+    const tr = ev.target.closest('tr');
+    if (ev.target.name === 'tipo' && !val(tr, 'zona') && ZONA_TIPO[ev.target.value]) {
+      tr.querySelector('[name="zona"]').value = ZONA_TIPO[ev.target.value];
+      paceAuto(tr);
+    }
+    if (ev.target.name === 'zona') paceAuto(tr);
+    volume();
+  });
   new MutationObserver(volume).observe(corpo, { childList: true });
   corpo.querySelectorAll('tr').forEach(paceAuto);
   volume();

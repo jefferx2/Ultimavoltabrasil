@@ -10,6 +10,7 @@ from flask import Flask, abort, flash, g, redirect, render_template, request, se
 from werkzeug.security import check_password_hash, generate_password_hash
 
 import ciclos
+import daniels
 import db
 import treinos
 
@@ -77,6 +78,13 @@ def data_br(valor):
 
 
 app.add_template_filter(treinos.fmt_km, "km")
+app.add_template_filter(daniels.fmt_pace, "pace")
+app.add_template_filter(daniels.fmt_tempo, "tempo")
+
+
+@app.template_filter("dias_desde")
+def dias_desde(hoje_iso, data_iso):
+    return (date.fromisoformat(hoje_iso) - date.fromisoformat(str(data_iso)[:10])).days
 
 
 @app.template_filter("numero")
@@ -194,6 +202,18 @@ def painel_instrutor(user):
     return render_template("painel_instrutor.html", total_alunos=total, total_macros=total_macros)
 
 
+def perfil_corrida(aluno):
+    """VDOT (avaliação mais recente), paces de treino e faixa de volume do aluno."""
+    aval = db.query_one("SELECT * FROM avaliacoes WHERE aluno_id = ? ORDER BY data DESC, id DESC LIMIT 1",
+                        (aluno["id"],))
+    p = daniels.paces(aval["vdot"]) if aval else None
+    return {
+        "avaliacao": aval, "vdot": aval["vdot"] if aval else None, "paces": p,
+        "faixa": daniels.faixa(aluno.get("prova_categoria"), aluno.get("nivel")),
+        "zonas_js": {z: round(p[z]) for z in daniels.ZONAS} if p else {},
+    }
+
+
 def _aluno_do_instrutor(aluno_id, instrutor_id):
     aluno = db.query_one(
         "SELECT * FROM usuarios WHERE id = ? AND perfil = 'aluno' AND instrutor_id = ?",
@@ -211,8 +231,26 @@ def _validar_aluno(form, aluno_id=None):
         "prova_principal": form.get("prova_principal", "").strip() or None,
         "telefone": form.get("telefone", "").strip() or None,
         "observacoes": form.get("observacoes", "").strip() or None,
+        "prova_categoria": form.get("prova_categoria", "").strip() or None,
+        "nivel": form.get("nivel", "").strip() or None,
     }
     erros = []
+    if dados["prova_categoria"] and dados["prova_categoria"] not in daniels.FAIXAS:
+        erros.append("Prova-alvo inválida.")
+    if dados["nivel"] and dados["nivel"] not in daniels.NIVEIS_ALUNO:
+        erros.append("Nível inválido.")
+    for campo, rotulo, minimo, maximo, tipo in (("volume_atual_km", "Volume semanal atual", 0, 300, float),
+                                                ("dias_semana", "Dias disponíveis", 1, 7, int)):
+        txt = (form.get(campo) or "").strip().replace(",", ".")
+        dados[campo] = None
+        if txt:
+            try:
+                v = float(txt)
+                if not minimo <= v <= maximo or (tipo is int and v != int(v)):
+                    raise ValueError
+                dados[campo] = tipo(v)
+            except ValueError:
+                erros.append(f"{rotulo}: informe um número de {minimo} a {maximo}.")
     if not dados["nome"]:
         erros.append("Informe o nome.")
     if not EMAIL_RE.match(dados["email"]):
@@ -258,13 +296,15 @@ def aluno_novo(user):
         else:
             db.execute(
                 "INSERT INTO usuarios (nome, email, senha_hash, perfil, instrutor_id, data_nascimento, "
-                "prova_principal, telefone, observacoes, trocar_senha) "
-                "VALUES (?, ?, ?, 'aluno', ?, ?, ?, ?, ?, 1)",
+                "prova_principal, telefone, observacoes, prova_categoria, nivel, volume_atual_km, dias_semana, "
+                "trocar_senha) VALUES (?, ?, ?, 'aluno', ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)",
                 (dados["nome"], dados["email"], generate_password_hash(senha), user["id"],
-                 dados["data_nascimento"], dados["prova_principal"], dados["telefone"], dados["observacoes"]))
+                 dados["data_nascimento"], dados["prova_principal"], dados["telefone"], dados["observacoes"],
+                 dados["prova_categoria"], dados["nivel"], dados["volume_atual_km"], dados["dias_semana"]))
             return render_template("aluno_acesso.html", nome=dados["nome"], email=dados["email"],
                                    senha=senha, titulo="Aluno cadastrado")
-    return render_template("aluno_form.html", aluno=dados, novo=True, provas=PROVAS_SUGERIDAS, senha_min=SENHA_MIN)
+    return render_template("aluno_form.html", aluno=dados, novo=True, provas=PROVAS_SUGERIDAS, senha_min=SENHA_MIN,
+                           d=daniels)
 
 
 @app.route("/instrutor/alunos/<int:aluno_id>", methods=["GET", "POST"])
@@ -280,14 +320,76 @@ def aluno_editar(user, aluno_id):
         else:
             db.execute(
                 "UPDATE usuarios SET nome = ?, email = ?, data_nascimento = ?, prova_principal = ?, "
-                "telefone = ?, observacoes = ? WHERE id = ?",
+                "telefone = ?, observacoes = ?, prova_categoria = ?, nivel = ?, volume_atual_km = ?, "
+                "dias_semana = ? WHERE id = ?",
                 (dados["nome"], dados["email"], dados["data_nascimento"], dados["prova_principal"],
-                 dados["telefone"], dados["observacoes"], aluno_id))
+                 dados["telefone"], dados["observacoes"], dados["prova_categoria"], dados["nivel"],
+                 dados["volume_atual_km"], dados["dias_semana"], aluno_id))
             flash("Dados do aluno salvos.", "ok")
             return redirect(url_for("alunos"))
     macros = db.query_all("SELECT * FROM macrociclos WHERE aluno_id = ? ORDER BY data_inicio DESC", (aluno_id,))
+    avaliacoes = db.query_all("SELECT * FROM avaliacoes WHERE aluno_id = ? ORDER BY data DESC, id DESC", (aluno_id,))
     return render_template("aluno_form.html", aluno=aluno, novo=False, provas=PROVAS_SUGERIDAS,
-                           senha_min=SENHA_MIN, macros=macros)
+                           senha_min=SENHA_MIN, macros=macros, avaliacoes=avaliacoes,
+                           perfil=perfil_corrida(aluno), d=daniels, hoje=date.today().isoformat())
+
+
+@app.route("/instrutor/alunos/<int:aluno_id>/avaliacoes", methods=["POST"])
+@login_obrigatorio("instrutor")
+def avaliacao_nova(user, aluno_id):
+    _aluno_do_instrutor(aluno_id, user["id"])
+    f = request.form
+    erros = []
+    d, erro = _data(f.get("data"), obrigatoria=True)
+    if erro:
+        erros.append(f"Data {erro}.")
+    elif d > date.today():
+        erros.append("A data da avaliação não pode ser no futuro.")
+    chave = f.get("distancia", "")
+    if chave not in daniels.DISTANCIAS_AVALIACAO:
+        erros.append("Escolha a distância.")
+        dist = tempo = None
+    elif chave == "cooper":  # teste de 12 minutos: informa a distância percorrida
+        tempo = 720
+        try:
+            dist = treinos.ler_distancia(f.get("distancia_cooper"))
+            if not dist or not 1000 <= dist <= 6000:
+                raise ValueError
+        except ValueError:
+            dist = None
+            erros.append("Teste de 12 minutos: informe a distância percorrida (ex.: 2800 ou 2,8 km).")
+    else:
+        dist = daniels.DISTANCIAS_AVALIACAO[chave][1]
+        tempo = treinos.ler_duracao(f.get("tempo"))
+        if not tempo:
+            erros.append("Informe o tempo (ex.: 24:30 ou 1:35:20).")
+    v = None
+    if dist and tempo and not erros:
+        v = daniels.vdot(dist, tempo)
+        if not 20 <= v <= 90:
+            erros.append(f"O tempo informado resulta em VDOT {v:.1f}, fora do esperado (20 a 90). Confira o tempo.")
+    if erros:
+        for e in erros:
+            flash(e, "erro")
+    else:
+        tipo = "teste" if chave == "cooper" or f.get("tipo") == "teste" else "prova"
+        db.execute("INSERT INTO avaliacoes (aluno_id, data, distancia_m, tempo_s, tipo, descricao, vdot) "
+                   "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                   (aluno_id, d.isoformat(), dist, tempo, tipo, (f.get("descricao") or "").strip() or None, round(v, 1)))
+        flash(f"Avaliação registrada: VDOT {v:.1f}.".replace(".", ",", 1), "ok")
+    return redirect(url_for("aluno_editar", aluno_id=aluno_id) + "#daniels")
+
+
+@app.route("/instrutor/avaliacoes/<int:aval_id>/excluir", methods=["POST"])
+@login_obrigatorio("instrutor")
+def avaliacao_excluir(user, aval_id):
+    aval = db.query_one("SELECT a.* FROM avaliacoes a JOIN usuarios u ON u.id = a.aluno_id "
+                        "WHERE a.id = ? AND u.instrutor_id = ?", (aval_id, user["id"]))
+    if not aval:
+        abort(404)
+    db.execute("DELETE FROM avaliacoes WHERE id = ?", (aval_id,))
+    flash("Avaliação excluída.", "ok")
+    return redirect(url_for("aluno_editar", aluno_id=aval["aluno_id"]) + "#daniels")
 
 
 @app.route("/instrutor/alunos/<int:aluno_id>/redefinir-senha", methods=["POST"])
@@ -436,8 +538,14 @@ def _visao_com_totais(macro):
     por_dia = treinos.carregar(macro["id"], visao["inicio"], fim)
     todos = [t for dia in por_dia.values() for t in dia]
     visao["totais"], visao["plan"] = {}, {}
-    metricas = treinos.metricas_semanais(todos, visao["inicio"])
-    referencias = {"corrida": macro.get("ref_km_semana"), "academia": macro.get("ref_series_semana")}
+    aluno = db.query_one("SELECT * FROM usuarios WHERE id = ?", (macro["aluno_id"],))
+    perfil = perfil_corrida(aluno)
+    visao["perfil"] = perfil
+    metricas = treinos.metricas_semanais(todos, visao["inicio"], perfil["paces"])
+    referencias = {"corrida": macro.get("ref_km_semana") or (perfil["faixa"]["max"] if perfil["faixa"] else None),
+                   "academia": macro.get("ref_series_semana")}
+    visao["ref_fonte"] = {"corrida": "macro" if macro.get("ref_km_semana") else ("faixa" if perfil["faixa"] else None),
+                          "academia": "macro" if macro.get("ref_series_semana") else None}
     for mod, grupo in visao["grupos"].items():
         plan = ciclos.niveis_planejados(metricas[mod], mod, referencias[mod])
         acima = ciclos.excessos(grupo, plan)
@@ -626,8 +734,18 @@ def _montar_semana(macro, n):
     for mod, grupo in visao["grupos"].items():
         fases_semana[mod] = next((f for f in grupo if f["inicio"] <= ini + timedelta(days=3) <= f["fim"]), None)
     resumo = {mod: treinos.somar(t["vol"] for t in todos if t["modalidade"] == mod) for mod in ciclos.MODALIDADES}
+    aluno = db.query_one("SELECT * FROM usuarios WHERE id = ?", (macro["aluno_id"],))
+    perfil = perfil_corrida(aluno)
+    met = treinos.metricas_semanais([t for t in todos if t["modalidade"] == "corrida"], ini, perfil["paces"])
+    zonas = met["corrida"].get(1)  # semana 1 relativa ao início desta semana
+    for d in dias:  # zona de cada bloco, para exibir
+        for t in d["treinos"]:
+            if t["modalidade"] == "corrida":
+                for b in t["itens"]:
+                    b["zona_calc"] = treinos.zona_do_bloco(b, perfil["paces"])
+                    b["pace_s"] = treinos.ler_pace(b.get("pace"))
     return {"n": n, "limite": limite, "inicio": ini, "fim": ini + timedelta(days=6), "dias": dias,
-            "fases": fases_semana, "resumo": resumo, "visao": visao}
+            "fases": fases_semana, "resumo": resumo, "visao": visao, "zonas": zonas, "perfil": perfil}
 
 
 def _treino_do_instrutor(treino_id, instrutor_id):
@@ -652,7 +770,7 @@ def semanas(user, macro_id):
 def semana(user, macro_id, n):
     macro = _macro_do_instrutor(macro_id, user["id"])
     return render_template("semana.html", macro=macro, s=_montar_semana(macro, n), editavel=True,
-                           fmt_dist=treinos.fmt_distancia)
+                           fmt_dist=treinos.fmt_distancia, d_=daniels)
 
 
 def _data_no_macro(macro, texto):
@@ -714,13 +832,15 @@ def _form_treino(user, macro, treino, novo):
                 "repeticoes": (fase and fase.get("repeticoes")) or ""}
     if not treino["itens"]:
         treino["itens"] = [{"series": sugestao["series"], "repeticoes": sugestao["repeticoes"]}] if \
-            treino["modalidade"] == "academia" else [{"tipo": "", "repeticoes": 1}]
+            treino["modalidade"] == "academia" else [{"tipo": "", "repeticoes": 1, "zona": ""}]
     for it in treino["itens"]:
         if "distancia_m" in it and "distancia" not in it:
             it["distancia"] = treinos.fmt_distancia(it["distancia_m"])
     n = min(max(1, treinos.semana_de(visao["inicio"], d)), _limite_semanas(macro, visao))
     voltar = url_for("semana", macro_id=macro["id"], n=n) + f"#d{d.isoformat()}"
+    aluno = db.query_one("SELECT * FROM usuarios WHERE id = ?", (macro["aluno_id"],))
     return render_template("treino_form.html", macro=macro, treino=treino, novo=novo, fase=fase, voltar=voltar,
+                           perfil=perfil_corrida(aluno), d=daniels,
                            sugestao=sugestao, tipos=treinos.TIPOS_CORRIDA,
                            exercicios=treinos.exercicios_usados(user["id"]),
                            dia_nome=treinos.DIAS[d.weekday()])
@@ -836,7 +956,9 @@ def painel_aluno(user):
     (macro, visao), macros = _macro_vigente(user["id"])
     if macro:
         visao = _visao_com_totais(macro)
-    return render_template("painel_aluno.html", macro=macro, v=visao, macros=macros)
+    aluno = db.query_one("SELECT * FROM usuarios WHERE id = ?", (user["id"],))
+    return render_template("painel_aluno.html", macro=macro, v=visao, macros=macros,
+                           perfil=perfil_corrida(aluno), d=daniels)
 
 
 @app.route("/aluno/semana")
@@ -866,7 +988,7 @@ def aluno_semana(user, macro_id, n):
     if not macro:
         abort(404)
     return render_template("semana.html", macro=macro, s=_montar_semana(macro, n), editavel=False,
-                           fmt_dist=treinos.fmt_distancia)
+                           fmt_dist=treinos.fmt_distancia, d_=daniels)
 
 
 @app.route("/aluno/ciclos/<int:macro_id>")

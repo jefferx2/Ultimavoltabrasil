@@ -162,6 +162,18 @@ CREATE TABLE IF NOT EXISTS treino_corrida (
 CREATE INDEX IF NOT EXISTS ix_treinos_macro ON treinos(macrociclo_id, data);
 CREATE INDEX IF NOT EXISTS ix_tacad_treino ON treino_academia(treino_id, ordem);
 CREATE INDEX IF NOT EXISTS ix_tcorr_treino ON treino_corrida(treino_id, ordem);
+CREATE TABLE IF NOT EXISTS avaliacoes (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    aluno_id INTEGER NOT NULL REFERENCES usuarios(id) ON DELETE CASCADE,
+    data TEXT NOT NULL,
+    distancia_m INTEGER NOT NULL CHECK (distancia_m BETWEEN 400 and 50000),
+    tempo_s INTEGER NOT NULL CHECK (tempo_s > 0),
+    tipo TEXT NOT NULL CHECK (tipo IN ('prova', 'teste')),
+    descricao TEXT,
+    vdot REAL NOT NULL,
+    criado_em TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS ix_aval_aluno ON avaliacoes(aluno_id, data);
 """
 
 SCHEMA_PG = """
@@ -237,9 +249,21 @@ CREATE TABLE IF NOT EXISTS treino_corrida (
 CREATE INDEX IF NOT EXISTS ix_treinos_macro ON treinos(macrociclo_id, data);
 CREATE INDEX IF NOT EXISTS ix_tacad_treino ON treino_academia(treino_id, ordem);
 CREATE INDEX IF NOT EXISTS ix_tcorr_treino ON treino_corrida(treino_id, ordem);
+CREATE TABLE IF NOT EXISTS avaliacoes (
+    id SERIAL PRIMARY KEY,
+    aluno_id INTEGER NOT NULL REFERENCES usuarios(id) ON DELETE CASCADE,
+    data TEXT NOT NULL,
+    distancia_m INTEGER NOT NULL CHECK (distancia_m BETWEEN 400 and 50000),
+    tempo_s INTEGER NOT NULL CHECK (tempo_s > 0),
+    tipo TEXT NOT NULL CHECK (tipo IN ('prova', 'teste')),
+    descricao TEXT,
+    vdot REAL NOT NULL,
+    criado_em TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS ix_aval_aluno ON avaliacoes(aluno_id, data);
 """
 
-TABELAS = ("usuarios", "macrociclos", "fases", "treinos", "treino_academia", "treino_corrida")
+TABELAS = ("usuarios", "macrociclos", "fases", "treinos", "treino_academia", "treino_corrida", "avaliacoes")
 
 # O app acessa direto pelo Postgres; a API pública do Supabase fica bloqueada.
 RLS_PG = "".join(f"""
@@ -261,6 +285,14 @@ COLUNAS_NOVAS = {
         "telefone": "TEXT",
         "observacoes": "TEXT",
         "trocar_senha": "INTEGER NOT NULL DEFAULT 0",
+        # anamnese (Jack Daniels)
+        "prova_categoria": "TEXT",       # chave de daniels.FAIXAS
+        "nivel": "TEXT",                 # baixa / media / alta (escolhido pelo professor)
+        "volume_atual_km": "REAL",       # média de km/semana nas últimas 4 semanas
+        "dias_semana": "INTEGER",        # dias disponíveis para treinar
+    },
+    "treino_corrida": {
+        "zona": "TEXT",                  # E / M / T / I / R
     },
     "macrociclos": {
         "ref_km_semana": "REAL",        # km/semana equivalentes ao volume 5 (corrida)

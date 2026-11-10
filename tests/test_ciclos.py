@@ -267,13 +267,15 @@ def test_intensidade_planejada_academia_segue_a_tabela():
     assert n["volume"][1] == 2.5 and n["volume"][5] == 1 and not n["relativa"]
 
 
-def test_intensidade_planejada_corrida_por_qualidade_e_volume_relativo():
-    m = {1: {"metros": 30000, "segundos": 10000, "segundos_qualidade": 0},
-         2: {"metros": 60000, "segundos": 10000, "segundos_qualidade": 2000},   # 20% -> 3
-         3: {"metros": 45000, "segundos": 10000, "segundos_qualidade": 5000}}   # 50% -> 5 (teto)
+def test_intensidade_planejada_corrida_por_pontos_de_daniels_e_volume_relativo():
+    # pontos por minuto: só E = 0,2 -> 2 · 0,3 -> 3 · 0,6 (teto) -> 5
+    m = {1: {"metros": 30000, "segundos": 6000, "pontos": 20.0},
+         2: {"metros": 60000, "segundos": 6000, "pontos": 30.0, "fora_limite": ["T"]},
+         3: {"metros": 45000, "segundos": 6000, "pontos": 60.0}}
     n = ciclos.niveis_planejados(m, "corrida")                                  # sem referência: relativa
     assert n["relativa"] and n["referencia"] == 60 and n["volume"] == {1: 2.5, 2: 5.0, 3: 3.75}
-    assert [n["intensidade"][w] for w in (1, 2, 3)] == [1.5, 3, 5]
+    assert [n["intensidade"][w] for w in (1, 2, 3)] == [2, 3, 5]
+    assert n["fora_limite"] == {2: ["T"]}
     assert ciclos.niveis_planejados(m, "corrida", referencia=40)["volume"][2] == 7.5   # passa de 5
 
 
@@ -283,7 +285,10 @@ def test_excessos_por_fase():
     plan = {"volume": {1: 5.4, 2: 5.6, 3: 3.0}, "intensidade": {1: 2.4, 2: 3.0}}
     acima = ciclos.excessos(fases, plan)
     assert acima == {"volume": {2}, "intensidade": {2}}          # 5,4 está dentro da tolerância (0,5)
-    assert fases[0]["acima"] == {"volume": 1, "intensidade": 1} and fases[1]["acima"] == {"volume": 0, "intensidade": 0}
+    assert fases[0]["acima"] == {"volume": 1, "intensidade": 1, "daniels": 0}
+    assert fases[1]["acima"] == {"volume": 0, "intensidade": 0, "daniels": 0}
+    ciclos.excessos(fases, {**plan, "fora_limite": {1: ["I"], 3: ["R"]}})
+    assert fases[0]["acima"]["daniels"] == 2
 
 
 def test_grafico_com_planejado_e_eixo_que_cresce():

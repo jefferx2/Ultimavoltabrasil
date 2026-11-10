@@ -108,7 +108,7 @@
         <path d="{{ g.plan_path[campo] }}" class="{{ cls }}"/>
         {% for pt in g.plan_pts[campo] %}
           <circle cx="{{ '%.1f' % pt.x }}" cy="{{ '%.1f' % pt.y }}" r="{{ 4.5 if pt.acima else 3 }}" class="{{ cls }}-pt {{ 'g-acima' if pt.acima }}">
-            <title>Semana {{ pt.semana }} · {{ campo }} planejado: nível {{ ('%.1f' % pt.nivel) | replace('.', ',') }}{% if campo == 'volume' and pl %} ({{ (pl.bruto[pt.semana] * 1000) | km if mod == 'corrida' else pl.bruto[pt.semana] ~ ' séries' }}){% endif %}{{ ' — ACIMA da metodologia' if pt.acima }}</title>
+            <title>Semana {{ pt.semana }} · {{ campo }} planejado: nível {{ ('%.1f' % pt.nivel) | replace('.', ',') }}{% if campo == 'volume' and pl %} ({{ (pl.bruto[pt.semana] * 1000) | km if mod == 'corrida' else pl.bruto[pt.semana] ~ ' séries' }}){% endif %}{{ ' — ACIMA da metodologia' if pt.metodologia or (campo == 'volume' and pt.acima) }}{{ ' — acima do limite de Daniels em ' ~ (pt.fora | join(', ')) if pt.fora }}</title>
           </circle>
           {% if pt.acima %}<text x="{{ '%.1f' % pt.x }}" y="{{ '%.1f' % (pt.y - 8) }}" class="g-alerta" text-anchor="middle">▲</text>{% endif %}
         {% endfor %}
@@ -128,9 +128,9 @@
     {% if pl %}
     <p class="leg-nota">
       {% if not pl.bruto %}Nenhum treino montado ainda: só a curva da metodologia aparece.
-      {% elif pl.relativa %}Escala relativa: volume 5 = maior semana planejada ({{ (pl.referencia * 1000) | km if mod == 'corrida' else pl.referencia ~ ' séries' }}). {% if editavel %}<a href="{{ url_for('macro_editar', macro_id=macro.id) }}">Defina a referência</a> para comparar o volume de verdade.{% endif %}
-      {% else %}Volume 5 = {{ (pl.referencia * 1000) | km if mod == 'corrida' else pl.referencia ~ ' séries' }}/semana (cada nível = 20%).{% endif %}
-      {% if pl.bruto %}Intensidade planejada pela {{ '% do tempo em blocos de qualidade' if mod == 'corrida' else 'média de repetições por série' }}. ▲ = semana acima da metodologia.{% endif %}
+      {% elif pl.relativa %}Escala relativa: volume 5 = maior semana planejada ({{ (pl.referencia * 1000) | km if mod == 'corrida' else pl.referencia ~ ' séries' }}). {% if editavel %}<a href="{{ url_for('macro_editar', macro_id=macro.id) }}">Defina a referência</a>{% if mod == 'corrida' %} ou a prova-alvo e o nível na ficha do aluno{% endif %} para comparar o volume de verdade.{% endif %}
+      {% else %}Volume 5 = {{ (pl.referencia * 1000) | km if mod == 'corrida' else pl.referencia ~ ' séries' }}/semana{% if v.ref_fonte and v.ref_fonte[mod] == 'faixa' %} (topo da faixa {{ v.perfil.faixa.rotulo }} · {{ v.perfil.faixa.nivel | lower }}){% endif %}, cada nível = 20%.{% endif %}
+      {% if pl.bruto %}Intensidade planejada {{ 'pelas zonas de Daniels (pontos por minuto: E 0,2 · M 0,4 · T 0,6 · I 1,0 · R 1,5)' if mod == 'corrida' else 'pela média de repetições por série' }}. ▲ = semana acima da metodologia{{ ' ou do limite semanal de T, I ou R' if mod == 'corrida' }}.{% endif %}
     </p>
     {% endif %}
   </figure>
@@ -166,6 +166,7 @@
             {% endif %}
             {% if f.acima and f.acima.volume %}<small class="alerta-fase">▲ volume acima em {{ f.acima.volume }} sem.</small>{% endif %}
             {% if f.acima and f.acima.intensidade %}<small class="alerta-fase">▲ intensidade acima em {{ f.acima.intensidade }} sem.</small>{% endif %}
+            {% if f.acima and f.acima.daniels %}<small class="alerta-fase">▲ limite T/I/R excedido em {{ f.acima.daniels }} sem.</small>{% endif %}
           {% else %}<span class="mudo">—</span>{% endif %}
         </td>{% endfor %}</tr>
         {% endif %}
