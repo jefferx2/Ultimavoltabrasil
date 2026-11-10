@@ -1,0 +1,18 @@
+{# Formatação de volume planejado. v = treinos.volume()/somar(). "~" = algum item sem tempo/carga calculável #}
+{% macro vol(mod, v, sessoes=false) -%}
+  {%- set aprox = '' if v.completo else '~' -%}
+  {%- if mod == 'corrida' -%}
+    {%- set partes = [] -%}
+    {%- if v.metros %}{% set _ = partes.append(v.metros | km) %}{% endif -%}
+    {%- if v.segundos %}{% set _ = partes.append(aprox ~ (v.segundos | duracao)) %}{% endif -%}
+    {%- if sessoes %}{% set _ = partes.append(v.sessoes ~ (' corrida' if v.sessoes == 1 else ' corridas')) %}{% endif -%}
+    {{ partes | join(' · ') if partes else '—' }}
+  {%- else -%}
+    {%- set partes = [] -%}
+    {%- if sessoes %}{% set _ = partes.append(v.sessoes ~ (' sessão' if v.sessoes == 1 else ' sessões')) %}{% endif -%}
+    {%- if v.series %}{% set _ = partes.append(v.series ~ ' séries') %}{% endif -%}
+    {%- if v.reps %}{% set _ = partes.append(aprox ~ v.reps ~ ' reps') %}{% endif -%}
+    {%- if v.kg %}{% set _ = partes.append(aprox ~ (v.kg | kg)) %}{% endif -%}
+    {{ partes | join(' · ') if partes else '—' }}
+  {%- endif -%}
+{%- endmacro %}

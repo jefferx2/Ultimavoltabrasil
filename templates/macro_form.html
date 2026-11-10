@@ -28,6 +28,18 @@
       <label class="col-2">Observações
         <textarea name="observacoes" rows="2">{{ macro.observacoes or '' }}</textarea>
       </label>
+      <fieldset class="col-2 caixa-opcoes">
+        <legend>Escala do volume no gráfico (metodologia × planejado)</legend>
+        <div class="grade">
+          <label>Corrida: km/semana no volume 5 (muito elevado)
+            <input name="ref_km_semana" inputmode="decimal" placeholder="ex.: 60" value="{{ macro.ref_km_semana | numero }}">
+          </label>
+          <label>Academia: séries/semana no volume 5
+            <input name="ref_series_semana" inputmode="numeric" placeholder="ex.: 80" value="{{ macro.ref_series_semana | numero }}">
+          </label>
+        </div>
+        <small>Cada nível vale 20% desse máximo (ex.: 60 km → nível 4 = 48 km, nível 3 = 36 km). Em branco, o sistema usa a maior semana planejada como nível 5 (escala relativa, só compara o formato das curvas).</small>
+      </fieldset>
       {% if novo %}
       <fieldset class="col-2 caixa-opcoes">
         <legend>Começar com o modelo de periodização linear (5 fases)</legend>

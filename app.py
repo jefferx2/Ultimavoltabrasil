@@ -76,6 +76,23 @@ def data_br(valor):
         return valor or ""
 
 
+app.add_template_filter(treinos.fmt_km, "km")
+
+
+@app.template_filter("numero")
+def numero(v):
+    """Número sem casas desnecessárias e com vírgula ('60', '42,5'); vazio para None."""
+    if not v and v != 0:  # None, "", ou ausente (Undefined)
+        return ""
+    try:
+        f = float(v)
+    except (TypeError, ValueError):
+        return v
+    return (f"{f:.0f}" if f == int(f) else f"{f:g}").replace(".", ",")
+app.add_template_filter(treinos.fmt_duracao, "duracao")
+app.add_template_filter(treinos.fmt_kg, "kg")
+
+
 @app.template_filter("data_curta")
 def data_curta(valor):
     try:
@@ -345,6 +362,18 @@ def _validar_macro(form):
         erros.append("O macrociclo pode ter no máximo 2 anos.")
     dados["data_inicio"] = ini.isoformat() if ini else None
     dados["data_competicao"] = comp.isoformat() if comp else None
+    for campo, rotulo, maximo, tipo in (("ref_km_semana", "Referência de km/semana", 400, float),
+                                        ("ref_series_semana", "Referência de séries/semana", 500, int)):
+        txt = (form.get(campo) or "").strip().replace(",", ".")
+        dados[campo] = None
+        if txt:
+            try:
+                v = tipo(float(txt)) if tipo is int else float(txt)
+                if not 0 < v <= maximo:
+                    raise ValueError
+                dados[campo] = v
+            except ValueError:
+                erros.append(f"{rotulo}: informe um número maior que zero (até {maximo}).")
     return dados, erros
 
 
@@ -377,10 +406,10 @@ def macro_novo(user, aluno_id):
             comp = date.fromisoformat(dados["data_competicao"]) if dados["data_competicao"] else None
             with db.Transacao() as t:
                 mid = t.insert(
-                    "INSERT INTO macrociclos (aluno_id, nome, competicao, data_inicio, data_competicao, observacoes) "
-                    "VALUES (?, ?, ?, ?, ?, ?)",
+                    "INSERT INTO macrociclos (aluno_id, nome, competicao, data_inicio, data_competicao, observacoes, "
+                    "ref_km_semana, ref_series_semana) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
                     (aluno_id, dados["nome"], dados["competicao"], dados["data_inicio"],
-                     dados["data_competicao"], dados["observacoes"]))
+                     dados["data_competicao"], dados["observacoes"], dados["ref_km_semana"], dados["ref_series_semana"]))
                 for mod in ciclos.MODALIDADES:
                     if dados[f"modelo_{mod}"]:
                         for f in ciclos.fases_modelo(mod, ini, comp):
@@ -399,12 +428,41 @@ def _inserir_fase(t, macro_id, modalidade, f):
          f.get("conteudo")))
 
 
+def _visao_com_totais(macro):
+    """Visão do macrociclo + volume planejado (treinos montados) por fase e no total."""
+    visao = ciclos.montar(macro, _fases_do_macro(macro["id"]))
+    limite = _limite_semanas(macro, visao)
+    fim = treinos.inicio_semana(visao["inicio"], limite) + timedelta(days=6)
+    por_dia = treinos.carregar(macro["id"], visao["inicio"], fim)
+    todos = [t for dia in por_dia.values() for t in dia]
+    visao["totais"], visao["plan"] = {}, {}
+    metricas = treinos.metricas_semanais(todos, visao["inicio"])
+    referencias = {"corrida": macro.get("ref_km_semana"), "academia": macro.get("ref_series_semana")}
+    for mod, grupo in visao["grupos"].items():
+        plan = ciclos.niveis_planejados(metricas[mod], mod, referencias[mod])
+        acima = ciclos.excessos(grupo, plan)
+        visao["plan"][mod] = plan
+        if grupo:
+            visao["graficos"][mod] = ciclos.grafico(grupo, visao["total_semanas"], visao["inicio"], plan, acima)
+    for mod, grupo in visao["grupos"].items():
+        do_mod = [t for t in todos if t["modalidade"] == mod]
+        for f in grupo:
+            ini, fim_f = f["inicio"].isoformat(), f["fim"].isoformat()
+            na_fase = [t for t in do_mod if ini <= t["data"] <= fim_f]
+            f["plan"] = treinos.somar(t["vol"] for t in na_fase)
+            semanas_montadas = {treinos.semana_de(visao["inicio"], date.fromisoformat(t["data"])) for t in na_fase}
+            f["plan"]["semanas"] = len(semanas_montadas)
+            f["plan"]["por_semana"] = f["plan"]["metros"] / len(semanas_montadas) if semanas_montadas else 0
+        visao["totais"][mod] = treinos.somar(t["vol"] for t in do_mod)
+    visao["semanas_com_treino"] = len({treinos.semana_de(visao["inicio"], date.fromisoformat(t["data"])) for t in todos})
+    return visao
+
+
 @app.route("/instrutor/ciclos/<int:macro_id>")
 @login_obrigatorio("instrutor")
 def macro_ver(user, macro_id):
     macro = _macro_do_instrutor(macro_id, user["id"])
-    visao = ciclos.montar(macro, _fases_do_macro(macro_id))
-    return render_template("macro_ver.html", macro=macro, v=visao, editavel=True)
+    return render_template("macro_ver.html", macro=macro, v=_visao_com_totais(macro), editavel=True)
 
 
 @app.route("/instrutor/ciclos/<int:macro_id>/editar", methods=["GET", "POST"])
@@ -420,9 +478,9 @@ def macro_editar(user, macro_id):
             macro.update(dados)
         else:
             db.execute("UPDATE macrociclos SET nome = ?, competicao = ?, data_inicio = ?, data_competicao = ?, "
-                       "observacoes = ? WHERE id = ?",
+                       "observacoes = ?, ref_km_semana = ?, ref_series_semana = ? WHERE id = ?",
                        (dados["nome"], dados["competicao"], dados["data_inicio"], dados["data_competicao"],
-                        dados["observacoes"], macro_id))
+                        dados["observacoes"], dados["ref_km_semana"], dados["ref_series_semana"], macro_id))
             flash("Macrociclo salvo.", "ok")
             return redirect(url_for("macro_ver", macro_id=macro_id))
     return render_template("macro_form.html", aluno=aluno, macro=macro, novo=False)
@@ -567,12 +625,7 @@ def _montar_semana(macro, n):
     fases_semana = {}
     for mod, grupo in visao["grupos"].items():
         fases_semana[mod] = next((f for f in grupo if f["inicio"] <= ini + timedelta(days=3) <= f["fim"]), None)
-    resumo = {
-        "km": sum(t.get("metros", 0) for t in todos if t["modalidade"] == "corrida") / 1000,
-        "corridas": sum(1 for t in todos if t["modalidade"] == "corrida"),
-        "academias": sum(1 for t in todos if t["modalidade"] == "academia"),
-        "series": sum(t.get("series_total", 0) for t in todos if t["modalidade"] == "academia"),
-    }
+    resumo = {mod: treinos.somar(t["vol"] for t in todos if t["modalidade"] == mod) for mod in ciclos.MODALIDADES}
     return {"n": n, "limite": limite, "inicio": ini, "fim": ini + timedelta(days=6), "dias": dias,
             "fases": fases_semana, "resumo": resumo, "visao": visao}
 
@@ -781,6 +834,8 @@ def _macro_vigente(aluno_id, hoje=None):
 @login_obrigatorio("aluno")
 def painel_aluno(user):
     (macro, visao), macros = _macro_vigente(user["id"])
+    if macro:
+        visao = _visao_com_totais(macro)
     return render_template("painel_aluno.html", macro=macro, v=visao, macros=macros)
 
 
@@ -820,8 +875,7 @@ def aluno_macro(user, macro_id):
     macro = db.query_one("SELECT * FROM macrociclos WHERE id = ? AND aluno_id = ?", (macro_id, user["id"]))
     if not macro:
         abort(404)
-    visao = ciclos.montar(macro, _fases_do_macro(macro_id))
-    return render_template("macro_ver.html", macro=macro, v=visao, editavel=False)
+    return render_template("macro_ver.html", macro=macro, v=_visao_com_totais(macro), editavel=False)
 
 
 # ---------------------------------------------------------------- erros

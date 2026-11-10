@@ -236,3 +236,60 @@ def test_excluir_macro_apaga_treinos(ctx):
     c.post(f"/instrutor/ciclos/{mid2}/excluir", data={"csrf": tok})
     assert db.query_one("SELECT COUNT(*) AS n FROM treinos WHERE macrociclo_id = ?", (mid2,))["n"] == 0
     assert db.query_one("SELECT COUNT(*) AS n FROM treino_corrida WHERE treino_id = ?", (tid,))["n"] == 0
+
+
+# ------------------------------------------------------------- tempo, pace e volume
+@pytest.mark.parametrize("txt,seg", [("72 s", 72), ("20 min", 1200), ("1 min 30", 90), ("1'30", 90), ("1:12", 72),
+                                     ("1:05:00", 3900), ("1h10", 4200), ("45", 2700), ("1,5 min", 90), ("90 seg", 90),
+                                     ("1 min forte / 1 min leve", None), ("", None), ("3x400", None)])
+def test_ler_duracao(txt, seg):
+    assert treinos.ler_duracao(txt) == seg
+
+
+def test_pace_e_tempo_do_bloco():
+    assert treinos.ler_pace("5:10/km") == 310 and treinos.ler_pace("5'10") == 310
+    assert treinos.ler_pace("1:12") is None                      # rápido demais para ser /km
+    assert treinos.fmt_pace(180) == "3:00/km"
+    tb = treinos.tempo_bloco
+    assert tb({"duracao": "20 min"}) == 1200
+    assert tb({"distancia_m": 8000, "pace": "5:00"}) == 2400
+    assert tb({"distancia_m": 400, "pace": "72 s"}) == 72         # tempo da repetição
+    assert tb({"distancia_m": 400, "pace": "1:12"}) == 72
+    assert tb({"distancia_m": 400, "pace": "72 s/km"}) is None
+    assert tb({"distancia_m": 2000}) is None and tb({"pace": "5:00"}) is None
+
+
+def test_volume_corrida():
+    v = treinos.volume("corrida", [
+        {"repeticoes": 1, "duracao": "15 min"},
+        {"repeticoes": 8, "distancia_m": 400, "pace": "72 s"},
+        {"repeticoes": 1, "distancia_m": 8000, "pace": "5:00/km"},
+    ])
+    assert v == {"metros": 11200, "segundos": 900 + 576 + 2400, "completo": True}
+    v = treinos.volume("corrida", [{"repeticoes": 1, "distancia_m": 2000}])
+    assert v["metros"] == 2000 and v["segundos"] == 0 and not v["completo"]
+
+
+def test_volume_academia():
+    v = treinos.volume("academia", [
+        {"series": 4, "repeticoes": "8–10", "carga": "60 kg"},   # 4 × 9 × 60 = 2160
+        {"series": 3, "repeticoes": "10", "carga": "22,5"},      # 3 × 10 × 22,5 = 675
+    ])
+    assert v == {"series": 7, "reps": 66, "kg": 2835, "completo": True}
+    v = treinos.volume("academia", [{"series": 3, "repeticoes": "40 s", "carga": None},
+                                    {"series": 2, "repeticoes": "12", "carga": "70% 1RM"}])
+    assert v["series"] == 5 and v["reps"] == 24 and v["kg"] == 0 and not v["completo"]
+
+
+def test_fmt():
+    assert [treinos.fmt_duracao(x) for x in (72, 90, 600, 2076, 3900)] == ["1 min 12", "1 min 30", "10 min", "34 min", "1h05"]
+    assert treinos.fmt_km(31200) == "31,2 km" and treinos.fmt_km(8000) == "8 km" and treinos.fmt_kg(10260) == "10.260 kg"
+
+
+def test_totais_no_macrociclo_e_semana(ctx):
+    c, mid = ctx["c"], ctx["mid"]
+    pag = c.get(f"/instrutor/ciclos/{mid}").text
+    assert "Total planejado no macrociclo" in pag and "Planejado" in pag and "km/sem." in pag
+    sem = c.get(f"/instrutor/ciclos/{mid}/semanas/1").text
+    assert "Volume da semana" in sem and 'title="Volume da sessão"' in sem
+    assert "Total planejado no macrociclo" in _login("t-aluno1@t.com").get(f"/aluno/ciclos/{mid}").text

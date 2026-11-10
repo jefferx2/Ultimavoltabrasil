@@ -1,4 +1,5 @@
 """Periodização: modelos de fases, datas e dados para as visualizações."""
+import math
 from datetime import date, timedelta
 
 MODALIDADES = {"academia": "Academia", "corrida": "Corrida"}
@@ -125,7 +126,7 @@ def montar(macro, fases, hoje=None):
         "hoje": hoje, "hoje_x": pos(hoje) if inicio <= hoje <= fim else None,
         "comp_x": pos(comp) if comp and inicio <= comp <= fim else None,
         "atual": {m: fase_atual(g, hoje) for m, g in grupos.items()},
-        "graficos": {m: grafico(g, total_semanas) for m, g in grupos.items() if g},
+        "graficos": {m: grafico(g, total_semanas, inicio) for m, g in grupos.items() if g},
         "marcas": marcas_meses(inicio, fim, pos),
     }
 
@@ -141,25 +142,35 @@ def marcas_meses(inicio, fim, pos):
     return saida
 
 
-def grafico(fases, total_semanas, largura=640, altura=220, margem=(34, 12, 28, 12)):
-    """Curvas de volume e intensidade (SVG) ao longo das semanas, com um ponto por fase."""
+def grafico(fases, total_semanas, inicio=None, plan=None, acima=None,
+            largura=720, altura=270, margem=(34, 26, 40, 12)):
+    """SVG: curvas da metodologia (por fase) e do planejado (por semana), com eixo de datas.
+    Escala vertical de 0 a 5 (ou mais, se o planejado passar de 5)."""
     esq, topo, base, dir_ = margem
     w, h = largura - esq - dir_, altura - topo - base
+    plan = plan or {"volume": {}, "intensidade": {}}
+    acima = acima or {"volume": set(), "intensidade": set()}
+    maior = max([v for c in ("volume", "intensidade") for v in plan[c].values()] + [5])
+    ymax = min(8, max(5, math.ceil(maior)))
 
-    def ponto(semana_meio, nivel):
-        return (esq + semana_meio / total_semanas * w, topo + (5 - nivel) / 4 * h)
+    def y(nivel):
+        return topo + (ymax - min(nivel, ymax)) / ymax * h
 
+    def x_sem(semana_float):
+        return esq + semana_float / total_semanas * w
+
+    # metodologia: um ponto no meio de cada fase, curva suave sem ultrapassar os níveis
     pts = {"volume": [], "intensidade": []}
     for f in fases:
         meio = f["semana_ini"] - 1 + f["semanas"] / 2
         for k in pts:
-            pts[k].append(ponto(meio, f[k]))
+            pts[k].append((x_sem(meio), y(f[k])))
 
     def caminho(p):
+        if not p:
+            return ""
         if len(p) == 1:
             return f"M{esq},{p[0][1]:.1f} L{esq + w},{p[0][1]:.1f}"
-        # estende até as bordas e suaviza com curva monotônica (Fritsch–Carlson):
-        # nunca passa acima/abaixo dos valores das fases
         p = [(esq, p[0][1])] + p + [(esq + w, p[-1][1])]
         n = len(p)
         dx = [p[i + 1][0] - p[i][0] or 1e-9 for i in range(n - 1)]
@@ -174,12 +185,93 @@ def grafico(fases, total_semanas, largura=640, altura=220, margem=(34, 12, 28, 1
             d += f" C{c1[0]:.1f},{c1[1]:.1f} {c2[0]:.1f},{c2[1]:.1f} {p[i + 1][0]:.1f},{p[i + 1][1]:.1f}"
         return d
 
-    divisorias = [esq + (f["semana_ini"] - 1) / total_semanas * w for f in fases[1:]]
-    faixas = [{"x": esq + (f["semana_ini"] - 1) / total_semanas * w,
-               "w": f["semanas"] / total_semanas * w, "cor": f["cor"], "nome": f["nome"]} for f in fases]
+    # planejado: um ponto por semana com treino; semanas sem treino interrompem a linha
+    plan_pts, plan_path = {}, {}
+    for campo in ("volume", "intensidade"):
+        semanas = sorted(s_ for s_ in plan[campo] if 1 <= s_ <= total_semanas)
+        plan_pts[campo] = [{"x": x_sem(s_ - 0.5), "y": y(plan[campo][s_]), "semana": s_,
+                            "nivel": plan[campo][s_], "acima": s_ in acima[campo]} for s_ in semanas]
+        d, anterior = "", None
+        for pt in plan_pts[campo]:
+            d += (" L" if anterior is not None and pt["semana"] == anterior + 1 else " M") + f"{pt['x']:.1f},{pt['y']:.1f}"
+            anterior = pt["semana"]
+        plan_path[campo] = d.strip()
+
+    meses = []
+    if inicio:
+        nomes = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"]
+        fim = inicio + timedelta(weeks=total_semanas)
+        d0 = date(inicio.year + (inicio.month == 12), inicio.month % 12 + 1, 1)
+        while d0 < fim:
+            meses.append({"x": x_sem((d0 - inicio).days / 7),
+                          "rotulo": nomes[d0.month - 1] + (f"/{str(d0.year)[2:]}" if d0.month == 1 else "")})
+            d0 = date(d0.year + (d0.month == 12), d0.month % 12 + 1, 1)
+
     return {
-        "largura": largura, "altura": altura, "esq": esq, "topo": topo, "w": w, "h": h,
-        "volume": caminho(pts["volume"]), "intensidade": caminho(pts["intensidade"]),
-        "pontos": pts, "divisorias": divisorias, "faixas": faixas,
-        "niveis": [(n, topo + (5 - n) / 4 * h) for n in range(1, 6)],
+        "largura": largura, "altura": altura, "esq": esq, "topo": topo, "w": w, "h": h, "ymax": ymax,
+        "volume": caminho(pts["volume"]), "intensidade": caminho(pts["intensidade"]), "pontos": pts,
+        "plan_path": plan_path, "plan_pts": plan_pts, "meses": meses,
+        "divisorias": [x_sem(f["semana_ini"] - 1) for f in fases[1:]],
+        "faixas": [{"x": x_sem(f["semana_ini"] - 1), "w": f["semanas"] / total_semanas * w,
+                    "cor": f["cor"], "nome": f["nome"], "ordem": f["ordem"]} for f in fases],
+        "niveis": [(n, y(n)) for n in range(0, ymax + 1)],
+        "y5": y(5),
     }
+
+
+# ---------------------------------------------------------------- planejado na escala 1–5
+# Intensidade da academia pela média de repetições por série (mesma lógica da tabela do modelo):
+# 15–20 reps = baixa (2) · 8–10 = moderada (3) · 4–6 = alta (4) · 1–3 = muito alta (5)
+ANCORAS_REPS = [(20, 1.5), (17.5, 2), (9, 3), (5, 4), (2, 5)]
+# Intensidade da corrida pela % do tempo em blocos de qualidade
+ANCORAS_QUALIDADE = [(0, 1.5), (10, 2), (20, 3), (30, 4), (40, 5)]
+TOLERANCIA = 0.5  # acima da metodologia por mais que isso = alerta
+
+
+def _interpolar(x, ancoras):
+    pts = sorted(ancoras)
+    if x <= pts[0][0]:
+        return pts[0][1]
+    if x >= pts[-1][0]:
+        return pts[-1][1]
+    for (x0, y0), (x1, y1) in zip(pts, pts[1:]):
+        if x0 <= x <= x1:
+            return y0 + (y1 - y0) * (x - x0) / (x1 - x0)
+
+
+def niveis_planejados(metricas, modalidade, referencia=None):
+    """Converte as métricas semanais em níveis 1–5 (podem passar de 5 quando a semana excede a referência).
+    Volume: nível = 5 × valor / referência (referência = valor do nível 5). Sem referência: maior semana planejada."""
+    if modalidade == "corrida":
+        vol = {w: m["metros"] / 1000 for w, m in metricas.items()}
+        intens = {w: _interpolar(100 * m["segundos_qualidade"] / m["segundos"], ANCORAS_QUALIDADE)
+                  for w, m in metricas.items() if m["segundos"]}
+    else:
+        vol = {w: m["series"] for w, m in metricas.items()}
+        intens = {w: _interpolar(m["reps_x_series"] / m["series_com_reps"], ANCORAS_REPS)
+                  for w, m in metricas.items() if m["series_com_reps"]}
+    relativa = not referencia
+    ref = referencia or max(vol.values(), default=0)
+    niveis_vol = {w: 5 * v / ref for w, v in vol.items()} if ref else {}
+    return {"volume": niveis_vol, "intensidade": intens, "bruto": vol, "referencia": ref, "relativa": relativa}
+
+
+def nivel_da_semana(fases, semana, campo):
+    for f in fases:
+        if f["semana_ini"] <= semana < f["semana_ini"] + f["semanas"]:
+            return f[campo]
+    return None
+
+
+def excessos(fases, plan):
+    """Semanas em que o planejado passa da metodologia (por campo), e contagem por fase."""
+    acima = {"volume": set(), "intensidade": set()}
+    for campo in acima:
+        for w, nivel in plan[campo].items():
+            meta = nivel_da_semana(fases, w, campo)
+            if meta is not None and nivel > meta + TOLERANCIA:
+                acima[campo].add(w)
+    for f in fases:
+        semanas = range(f["semana_ini"], f["semana_ini"] + f["semanas"])
+        f["acima"] = {c: sum(1 for w in semanas if w in acima[c]) for c in acima}
+    return acima

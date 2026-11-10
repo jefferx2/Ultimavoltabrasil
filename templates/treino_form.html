@@ -75,7 +75,13 @@
       </table>
     </div>
     <button type="button" class="btn btn-contorno btn-peq" id="add-item">+ {{ 'Exercício' if acad else 'Bloco' }}</button>
-    {% if not acad %}<p class="nota">Distância: <b>400</b> = 400 m · <b>1,5 km</b> · <b>8</b> = 8 km. Use a duração para blocos por tempo (ex.: 20 min).</p>{% endif %}
+    <p class="volume-sessao"><span>Volume da sessão</span><b id="vol-txt">—</b><small id="vol-nota"></small></p>
+    {% if acad %}
+      <p class="nota">A tonelagem (séries × repetições × carga) é calculada quando a carga está em kg (ex.: 60 kg). Faixas como 8–10 contam pela média.</p>
+    {% else %}
+      <p class="nota">Distância: <b>400</b> = 400 m · <b>1,5 km</b> · <b>8</b> = 8 km. Duração: <b>72 s</b>, <b>1:12</b>, <b>1 min 30</b>, <b>20 min</b>, <b>1h10</b>.
+        Com distância e duração preenchidas, o pace é calculado sozinho (fundo verde). Se você digitar o pace, ele é mantido.</p>
+    {% endif %}
 
     <label class="bloco-campo">Orientações gerais
       <textarea name="observacoes" rows="2" placeholder="{{ 'ex.: priorizar técnica, cadência 2-0-2' if acad else 'ex.: pista, tênis de prova' }}">{{ treino.observacoes or '' }}</textarea>
@@ -92,6 +98,115 @@
 </section>
 
 <script>
+// Mesmas regras de leitura do servidor (treinos.py)
+const UV = {
+  dist(t) {
+    t = (t || '').trim().toLowerCase().replace(/\s/g, '').replace(',', '.');
+    const m = t.match(/^(\d+(?:\.\d+)?)(km|k|m)?$/); if (!m) return null;
+    let v = parseFloat(m[1]); if (m[2] === 'km' || m[2] === 'k' || (!m[2] && v < 50)) v *= 1000;
+    v = Math.round(v); return v >= 1 && v <= 100000 ? v : null;
+  },
+  dur(t) {
+    t = (t || '').trim().toLowerCase().replace(/,/g, '.').replace(/\s/g, '');
+    if (!t) return null;
+    let m = t.match(/^(\d+):(\d{1,2})(?::(\d{1,2}))?$/);
+    if (m) return m[3] !== undefined ? +m[1] * 3600 + +m[2] * 60 + +m[3] : +m[1] * 60 + +m[2];
+    t = t.replace('segundos', 's').replace('segundo', 's').replace('seg', 's').replace('minutos', 'min')
+         .replace('minuto', 'min').replace('horas', 'h').replace('hora', 'h').replace("''", '"');
+    const re = /(\d+(?:\.\d+)?)(h|min|m|'|s|")?/g; let p, junto = '', total = 0, ant = null, achou = false;
+    const mult = { h: 3600, min: 60, m: 60, "'": 60, s: 1, '"': 1 };
+    while ((p = re.exec(t)) !== null) {
+      if (p[0] === '') { re.lastIndex++; continue; }
+      achou = true; junto += p[0];
+      let u = p[2] || ({ h: 'min', min: 's', m: 's', "'": 's' }[ant] || 'min');
+      total += parseFloat(p[1]) * mult[u]; ant = u;
+    }
+    return achou && junto === t && total > 0 ? Math.round(total) : null;
+  },
+  pace(t) {
+    t = (t || '').trim().toLowerCase().replace(/\s/g, '').replace('min/km', '').replace('/km', '');
+    const m = t.match(/^(\d{1,2})[:'](\d{2})"?$/); if (!m) return null;
+    const s = +m[1] * 60 + +m[2]; return s >= 120 ? s : null;   // < 2:00/km = tempo da repetição
+  },
+  tempoBloco(dist, dur, paceTxt) {
+    if (dur) return dur;
+    if (!dist) return null;
+    const p = UV.pace(paceTxt); if (p) return dist / 1000 * p;
+    return (paceTxt || '').toLowerCase().includes('/km') ? null : UV.dur(paceTxt);
+  },
+  kg(t) { const m = (t || '').trim().toLowerCase().replace(/\s/g, '').replace(',', '.').match(/^(\d+(?:\.\d+)?)(kg)?$/); return m ? parseFloat(m[1]) : null; },
+  reps(t) { const m = (t || '').trim().toLowerCase().replace(/\s/g, '').match(/^(\d+)(?:[-–a](\d+))?(?:reps?)?$/); return m ? (m[2] ? (+m[1] + +m[2]) / 2 : +m[1]) : null; },
+  fmtPace(s) { s = Math.round(s); return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0') + '/km'; },
+  fmtDur(s) {
+    s = Math.round(s); const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), r = s % 60;
+    if (h) return h + 'h' + String(m).padStart(2, '0');
+    if (m && r) return m < 10 ? m + ' min ' + String(r).padStart(2, '0') : m + ' min';
+    return m ? m + ' min' : r + ' s';
+  },
+  fmtKm(mt) { const km = mt / 1000; return (Math.abs(km - Math.round(km)) < 0.05 ? Math.round(km) : km.toFixed(1).replace('.', ',')) + ' km'; },
+  fmtKg(kg) { return Math.round(kg).toLocaleString('pt-BR') + ' kg'; },
+};
+
+(function () {
+  const corpo = document.getElementById('itens');
+  const ACAD = {{ 'true' if acad else 'false' }};
+  const val = (tr, n) => (tr.querySelector(`[name="${n}"]`) || {}).value || '';
+
+  function paceAuto(tr) {
+    const campo = tr.querySelector('[name="pace"]');
+    if (!campo || (campo.value && campo.dataset.auto !== '1')) return;
+    const d = UV.dist(val(tr, 'distancia')), s = UV.dur(val(tr, 'duracao'));
+    if (d && s) { campo.value = UV.fmtPace(s / (d / 1000)); campo.dataset.auto = '1'; campo.classList.add('pace-auto'); }
+    else if (campo.dataset.auto === '1') { campo.value = ''; }
+  }
+
+  function volume() {
+    let txt = '—', nota = '';
+    const linhas = [...corpo.querySelectorAll('tr')];
+    if (ACAD) {
+      let series = 0, reps = 0, kg = 0, completo = true, n = 0;
+      linhas.forEach(tr => {
+        if (!val(tr, 'exercicio').trim()) return;
+        n++; const sr = parseInt(val(tr, 'series')) || 0; series += sr;
+        const r = UV.reps(val(tr, 'repeticoes')); if (r === null) { completo = false; return; }
+        reps += r * sr; const c = UV.kg(val(tr, 'carga')); if (c === null) completo = false; else kg += c * r * sr;
+      });
+      if (n) {
+        const a = completo ? '' : '~';
+        txt = [n + (n === 1 ? ' exercício' : ' exercícios'), series + ' séries',
+               reps ? a + Math.round(reps) + ' reps' : null, kg ? a + UV.fmtKg(kg) : null].filter(Boolean).join(' · ');
+        if (!completo) nota = '~ alguns exercícios sem carga em kg ou repetições numéricas';
+      }
+    } else {
+      let m = 0, s = 0, completo = true, n = 0;
+      linhas.forEach(tr => {
+        if (!val(tr, 'tipo')) return;
+        n++; const rp = parseInt(val(tr, 'repeticoes')) || 1, d = UV.dist(val(tr, 'distancia')) || 0;
+        const tb = UV.tempoBloco(d, UV.dur(val(tr, 'duracao')), val(tr, 'pace'));
+        m += d * rp;
+        if (tb) s += tb * rp; else completo = false;
+      });
+      if (n) {
+        txt = [m ? UV.fmtKm(m) : null, s ? (completo ? '' : '~') + UV.fmtDur(s) : null].filter(Boolean).join(' · ') || '—';
+        if (!completo) nota = '~ algum bloco sem tempo calculável (informe a duração, o pace m:ss/km ou o tempo da repetição)';
+      }
+    }
+    document.getElementById('vol-txt').textContent = txt;
+    document.getElementById('vol-nota').textContent = nota;
+  }
+
+  corpo.addEventListener('input', (ev) => {
+    const tr = ev.target.closest('tr');
+    if (ev.target.name === 'pace') { delete ev.target.dataset.auto; ev.target.classList.remove('pace-auto'); }
+    if (ev.target.name === 'distancia' || ev.target.name === 'duracao') paceAuto(tr);
+    volume();
+  });
+  corpo.addEventListener('change', volume);
+  new MutationObserver(volume).observe(corpo, { childList: true });
+  corpo.querySelectorAll('tr').forEach(paceAuto);
+  volume();
+})();
+
 (function () {
   const corpo = document.getElementById('itens');
   const modelo = document.getElementById('modelo-linha');

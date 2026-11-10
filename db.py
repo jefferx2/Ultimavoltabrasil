@@ -251,15 +251,21 @@ DO $$ BEGIN
 END $$;""" for t in TABELAS)
 
 
-# Colunas acrescentadas depois da criação da tabela (aplicadas em bancos já existentes).
-# nome -> tipo (o mesmo nos dois bancos)
-COLUNAS_USUARIOS = {
-    "instrutor_id": "INTEGER REFERENCES usuarios(id)",
-    "data_nascimento": "TEXT",
-    "prova_principal": "TEXT",
-    "telefone": "TEXT",
-    "observacoes": "TEXT",
-    "trocar_senha": "INTEGER NOT NULL DEFAULT 0",
+# Colunas acrescentadas depois da criação das tabelas (aplicadas em bancos já existentes).
+# tabela -> {nome: tipo} (o mesmo nos dois bancos)
+COLUNAS_NOVAS = {
+    "usuarios": {
+        "instrutor_id": "INTEGER REFERENCES usuarios(id)",
+        "data_nascimento": "TEXT",
+        "prova_principal": "TEXT",
+        "telefone": "TEXT",
+        "observacoes": "TEXT",
+        "trocar_senha": "INTEGER NOT NULL DEFAULT 0",
+    },
+    "macrociclos": {
+        "ref_km_semana": "REAL",        # km/semana equivalentes ao volume 5 (corrida)
+        "ref_series_semana": "INTEGER",  # séries/semana equivalentes ao volume 5 (academia)
+    },
 }
 
 
@@ -281,10 +287,11 @@ def init_db():
             conn.execute(RLS_PG)
         else:
             conn.executescript(SCHEMA_SQLITE)
-        existentes = _colunas_existentes(conn, "usuarios")
-        for nome, tipo in COLUNAS_USUARIOS.items():
-            if nome not in existentes:
-                # IF NOT EXISTS: os workers do gunicorn sobem juntos e podem tentar ao mesmo tempo
-                se_nao = "IF NOT EXISTS " if IS_PG else ""
-                conn.execute(f"ALTER TABLE usuarios ADD COLUMN {se_nao}{nome} {tipo}")
+        for tabela, colunas in COLUNAS_NOVAS.items():
+            existentes = _colunas_existentes(conn, tabela)
+            for nome, tipo in colunas.items():
+                if nome not in existentes:
+                    # IF NOT EXISTS: os workers do gunicorn sobem juntos e podem tentar ao mesmo tempo
+                    se_nao = "IF NOT EXISTS " if IS_PG else ""
+                    conn.execute(f"ALTER TABLE {tabela} ADD COLUMN {se_nao}{nome} {tipo}")
         conn.commit()

@@ -336,3 +336,37 @@ h1, h2, .marca span, .sobretitulo {
   .grade-3 { grid-template-columns: 1fr !important; }
   .paginacao .btn { padding: 5px 10px; }
 }
+
+/* ---- volumes ---- */
+.total-macro { display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: baseline; background: var(--claro); border-radius: 6px; padding: 10px 14px; margin-bottom: 12px; }
+.total-macro span { font: 600 .75rem "Barlow", sans-serif; text-transform: uppercase; letter-spacing: .06em; color: var(--cinza); }
+.linha-plan td b { font-size: .95rem; }
+.linha-plan th small { text-transform: none; letter-spacing: 0; font-weight: 400; }
+.volume-sessao { margin-top: 12px; display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: baseline; background: var(--claro); border-radius: 6px; padding: 10px 14px; }
+.volume-sessao span { font: 600 .75rem "Barlow", sans-serif; text-transform: uppercase; letter-spacing: .06em; color: var(--cinza); }
+.volume-sessao small { color: var(--cinza); }
+input.pace-auto { background: #f6fbf7; }
+
+/* ---- gráfico metodologia × planejado ---- */
+.g-grade-5 { stroke: #bbb; stroke-dasharray: 2 3; }
+.g-tick { stroke: #bbb; }
+.g-plan-vol, .g-plan-int { fill: none; stroke-width: 2; stroke-dasharray: 5 4; }
+.g-plan-vol { stroke: #555; }
+.g-plan-int { stroke: #e8747a; }
+.g-plan-vol-pt { fill: #555; }
+.g-plan-int-pt { fill: #e8747a; }
+.g-acima { fill: #fff !important; stroke: var(--vermelho); stroke-width: 2.5; }
+.g-alerta { font-size: 10px; fill: var(--vermelho); }
+.g-fase { font-weight: 800; }
+.grafico figcaption { align-items: center; padding-left: 0; gap: 8px 14px; }
+.grafico .leg { display: inline-flex; align-items: center; gap: 5px; cursor: pointer; user-select: none; }
+.grafico .leg::before { display: none; }
+.grafico .leg input { accent-color: var(--vermelho); margin: 0; }
+.grafico .leg i { display: inline-block; width: 20px; height: 0; border-top: 3px solid; }
+.leg-volume { border-color: var(--preto) !important; }
+.leg-intens { border-color: var(--vermelho) !important; }
+.leg-plan-vol { border-top: 2px dashed #555 !important; }
+.leg-plan-int { border-top: 2px dashed #e8747a !important; }
+.leg-grupo { font: 600 .72rem "Barlow", sans-serif; text-transform: uppercase; letter-spacing: .06em; color: var(--cinza); margin-left: 6px; }
+.grafico > .leg-nota { display: block; font-size: .8rem; margin-top: 6px; }
+.alerta-fase { color: var(--vermelho-esc) !important; font-weight: 600; }

@@ -1,4 +1,5 @@
-{# Visualizações de um macrociclo. Espera: v (ciclos.montar), macro, editavel #}
+{# Visualizações de um macrociclo. Espera: v (ciclos.montar + totais), macro, editavel #}
+{% from "_volume.html" import vol %}
 
 {# ---------- Onde estou agora ---------- #}
 {% set tem_atual = v.atual.academia or v.atual.corrida %}
@@ -66,37 +67,72 @@
     <h2>{{ rot }}</h2>
     {% if editavel %}<a class="btn btn-contorno btn-peq" href="{{ url_for('fase_nova', macro_id=macro.id, modalidade=mod) }}">+ Fase</a>{% endif %}
   </div>
+  {% if v.totais %}
+  {% set tot = v.totais[mod] %}
+  <p class="total-macro">
+    <span>Total planejado no macrociclo</span>
+    <b>{{ vol(mod, tot, sessoes=true) if tot.sessoes else 'nenhum treino montado ainda' }}</b>
+  </p>
+  {% endif %}
 
   {% if v.avisos[mod] %}<div class="alerta alerta-aviso">{{ v.avisos[mod] }}</div>{% endif %}
 
   {% if fases %}
   {% set g = v.graficos[mod] %}
-  <figure class="grafico">
-    <svg viewBox="0 0 {{ g.largura }} {{ g.altura }}" role="img" aria-label="Volume e intensidade ao longo das fases de {{ rot | lower }}">
+  {% set pl = v.plan[mod] if v.plan else none %}
+  <figure class="grafico" data-grafico>
+    <svg viewBox="0 0 {{ g.largura }} {{ g.altura }}" role="img" aria-label="Volume e intensidade de {{ rot | lower }}: metodologia e planejado">
       {% for fx in g.faixas %}
-        <rect x="{{ '%.1f' % fx.x }}" y="{{ g.topo }}" width="{{ '%.1f' % fx.w }}" height="{{ g.h }}" fill="{{ fx.cor }}" opacity=".08"/>
+        <rect x="{{ '%.1f' % fx.x }}" y="{{ g.topo }}" width="{{ '%.1f' % fx.w }}" height="{{ g.h }}" fill="{{ fx.cor }}" opacity=".09"/>
+        <text x="{{ '%.1f' % (fx.x + fx.w / 2) }}" y="{{ g.topo - 9 }}" class="g-fase" text-anchor="middle" fill="{{ fx.cor }}">{{ fx.ordem }}</text>
       {% endfor %}
       {% for n, y in g.niveis %}
-        <line x1="{{ g.esq }}" x2="{{ g.esq + g.w }}" y1="{{ '%.1f' % y }}" y2="{{ '%.1f' % y }}" class="g-grade"/>
+        <line x1="{{ g.esq }}" x2="{{ g.esq + g.w }}" y1="{{ '%.1f' % y }}" y2="{{ '%.1f' % y }}" class="{{ 'g-grade-5' if n == 5 and g.ymax > 5 else 'g-grade' }}"/>
         <text x="{{ g.esq - 8 }}" y="{{ '%.1f' % (y + 4) }}" class="g-eixo" text-anchor="end">{{ n }}</text>
       {% endfor %}
       {% for x in g.divisorias %}
         <line x1="{{ '%.1f' % x }}" x2="{{ '%.1f' % x }}" y1="{{ g.topo }}" y2="{{ g.topo + g.h }}" class="g-div"/>
       {% endfor %}
-      <path d="{{ g.volume }}" class="g-volume"/>
-      <path d="{{ g.intensidade }}" class="g-intens"/>
-      {% for x, y in g.pontos.volume %}<circle cx="{{ '%.1f' % x }}" cy="{{ '%.1f' % y }}" r="4" class="g-pt-volume"/>{% endfor %}
-      {% for x, y in g.pontos.intensidade %}<circle cx="{{ '%.1f' % x }}" cy="{{ '%.1f' % y }}" r="4" class="g-pt-intens"/>{% endfor %}
-      {% for f in fases %}
-        {% set fx = g.faixas[loop.index0] %}
-        <text x="{{ '%.1f' % (fx.x + fx.w / 2) }}" y="{{ g.altura - 8 }}" class="g-fase" text-anchor="middle">{{ f.ordem }}</text>
+      {% for m in g.meses %}
+        <line x1="{{ '%.1f' % m.x }}" x2="{{ '%.1f' % m.x }}" y1="{{ g.topo + g.h }}" y2="{{ g.topo + g.h + 5 }}" class="g-tick"/>
+        <text x="{{ '%.1f' % (m.x + 3) }}" y="{{ g.topo + g.h + 18 }}" class="g-eixo">{{ m.rotulo }}</text>
+      {% endfor %}
+
+      <g class="camada" data-camada="met-vol"><path d="{{ g.volume }}" class="g-volume"/>
+        {% for x, y in g.pontos.volume %}<circle cx="{{ '%.1f' % x }}" cy="{{ '%.1f' % y }}" r="4" class="g-pt-volume"/>{% endfor %}</g>
+      <g class="camada" data-camada="met-int"><path d="{{ g.intensidade }}" class="g-intens"/>
+        {% for x, y in g.pontos.intensidade %}<circle cx="{{ '%.1f' % x }}" cy="{{ '%.1f' % y }}" r="4" class="g-pt-intens"/>{% endfor %}</g>
+
+      {% for campo, cls, cam in (('volume', 'g-plan-vol', 'plan-vol'), ('intensidade', 'g-plan-int', 'plan-int')) %}
+      <g class="camada" data-camada="{{ cam }}">
+        <path d="{{ g.plan_path[campo] }}" class="{{ cls }}"/>
+        {% for pt in g.plan_pts[campo] %}
+          <circle cx="{{ '%.1f' % pt.x }}" cy="{{ '%.1f' % pt.y }}" r="{{ 4.5 if pt.acima else 3 }}" class="{{ cls }}-pt {{ 'g-acima' if pt.acima }}">
+            <title>Semana {{ pt.semana }} · {{ campo }} planejado: nível {{ ('%.1f' % pt.nivel) | replace('.', ',') }}{% if campo == 'volume' and pl %} ({{ (pl.bruto[pt.semana] * 1000) | km if mod == 'corrida' else pl.bruto[pt.semana] ~ ' séries' }}){% endif %}{{ ' — ACIMA da metodologia' if pt.acima }}</title>
+          </circle>
+          {% if pt.acima %}<text x="{{ '%.1f' % pt.x }}" y="{{ '%.1f' % (pt.y - 8) }}" class="g-alerta" text-anchor="middle">▲</text>{% endif %}
+        {% endfor %}
+      </g>
       {% endfor %}
     </svg>
     <figcaption>
-      <span class="leg leg-volume">Volume</span>
-      <span class="leg leg-intens">Intensidade</span>
-      <span class="leg-nota">escala 1 (muito baixo) a 5 (muito alto) · números = fases</span>
+      <span class="leg-grupo">Metodologia</span>
+      <label class="leg"><input type="checkbox" data-alterna="met-vol" checked><i class="leg-volume"></i>Volume</label>
+      <label class="leg"><input type="checkbox" data-alterna="met-int" checked><i class="leg-intens"></i>Intensidade</label>
+      {% if pl %}
+      <span class="leg-grupo">Planejado (treinos)</span>
+      <label class="leg"><input type="checkbox" data-alterna="plan-vol" checked><i class="leg-plan-vol"></i>Volume</label>
+      <label class="leg"><input type="checkbox" data-alterna="plan-int" checked><i class="leg-plan-int"></i>Intensidade</label>
+      {% endif %}
     </figcaption>
+    {% if pl %}
+    <p class="leg-nota">
+      {% if not pl.bruto %}Nenhum treino montado ainda: só a curva da metodologia aparece.
+      {% elif pl.relativa %}Escala relativa: volume 5 = maior semana planejada ({{ (pl.referencia * 1000) | km if mod == 'corrida' else pl.referencia ~ ' séries' }}). {% if editavel %}<a href="{{ url_for('macro_editar', macro_id=macro.id) }}">Defina a referência</a> para comparar o volume de verdade.{% endif %}
+      {% else %}Volume 5 = {{ (pl.referencia * 1000) | km if mod == 'corrida' else pl.referencia ~ ' séries' }}/semana (cada nível = 20%).{% endif %}
+      {% if pl.bruto %}Intensidade planejada pela {{ '% do tempo em blocos de qualidade' if mod == 'corrida' else 'média de repetições por série' }}. ▲ = semana acima da metodologia.{% endif %}
+    </p>
+    {% endif %}
   </figure>
 
   <div class="tabela-wrap">
@@ -116,6 +152,23 @@
         {% endif %}
         <tr><th>Intensidade</th>{% for f in fases %}<td><span class="nivel n{{ f.intensidade }}">{{ NIVEIS[f.intensidade] }}</span>{% if f.intensidade_ref %}<small>{{ f.intensidade_ref }}</small>{% endif %}</td>{% endfor %}</tr>
         <tr><th>Volume</th>{% for f in fases %}<td><span class="nivel n{{ f.volume }}">{{ NIVEIS_VOLUME[f.volume] }}</span>{% if f.volume_ref %}<small>{{ f.volume_ref }}</small>{% endif %}</td>{% endfor %}</tr>
+        {% if v.totais %}
+        <tr class="linha-plan"><th>Planejado<br><small>treinos montados</small></th>{% for f in fases %}<td>
+          {% if f.plan.sessoes %}
+            {% if mod == 'corrida' %}
+              <b>{{ f.plan.metros | km }}</b>
+              <small>{{ f.plan.por_semana | km }}/sem. (média de {{ f.plan.semanas }} sem. montada{{ 's' if f.plan.semanas != 1 }}) · {{ f.plan.sessoes }} corrida{{ 's' if f.plan.sessoes != 1 }}</small>
+              {% if f.plan.segundos %}<small>{{ '' if f.plan.completo else '~' }}{{ f.plan.segundos | duracao }}</small>{% endif %}
+            {% else %}
+              <b>{{ f.plan.sessoes }} sess{{ 'ão' if f.plan.sessoes == 1 else 'ões' }}</b>
+              <small>{{ f.plan.semanas }} sem. montada{{ 's' if f.plan.semanas != 1 }}</small>
+              <small>{{ f.plan.series }} séries{% if f.plan.kg %} · {{ '' if f.plan.completo else '~' }}{{ f.plan.kg | kg }}{% endif %}</small>
+            {% endif %}
+            {% if f.acima and f.acima.volume %}<small class="alerta-fase">▲ volume acima em {{ f.acima.volume }} sem.</small>{% endif %}
+            {% if f.acima and f.acima.intensidade %}<small class="alerta-fase">▲ intensidade acima em {{ f.acima.intensidade }} sem.</small>{% endif %}
+          {% else %}<span class="mudo">—</span>{% endif %}
+        </td>{% endfor %}</tr>
+        {% endif %}
         {% if fases | selectattr('conteudo') | list %}
         <tr><th>Orientações</th>{% for f in fases %}<td class="texto">{{ f.conteudo or '' }}</td>{% endfor %}</tr>
         {% endif %}
@@ -142,3 +195,11 @@
   {% endif %}
 </div>
 {% endfor %}
+
+<script>
+document.querySelectorAll('[data-grafico]').forEach(fig => {
+  fig.querySelectorAll('[data-alterna]').forEach(cb => cb.addEventListener('change', () => {
+    fig.querySelectorAll(`[data-camada="${cb.dataset.alterna}"]`).forEach(g => g.style.display = cb.checked ? '' : 'none');
+  }));
+});
+</script>

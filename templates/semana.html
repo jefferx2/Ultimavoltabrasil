@@ -3,6 +3,7 @@
 
 
 {% block conteudo %}
+{% from "_volume.html" import vol %}
 {% macro bloco_corrida(b) -%}
   <b>{{ b.tipo }}</b>
   {%- if b.repeticoes > 1 %} {{ b.repeticoes }}×{% endif %}
@@ -46,9 +47,9 @@
       </div>
     {% endfor %}
     <div class="agora-card agora-comp">
-      <span class="agora-mod">Planejado na semana</span>
-      <b>{{ ('%.1f' % s.resumo.km).replace('.', ',') if s.resumo.km % 1 else '%d' % s.resumo.km }} km de corrida</b>
-      <span>{{ s.resumo.corridas }} corrida{{ 's' if s.resumo.corridas != 1 }} · {{ s.resumo.academias }} academia{{ 's' if s.resumo.academias != 1 }} ({{ s.resumo.series }} séries)</span>
+      <span class="agora-mod">Volume da semana</span>
+      <b>{{ vol('corrida', s.resumo.corrida, sessoes=true) if s.resumo.corrida.sessoes else 'Sem corridas' }}</b>
+      <span>Academia: {{ vol('academia', s.resumo.academia, sessoes=true) if s.resumo.academia.sessoes else 'sem sessões' }}</span>
     </div>
   </div>
 
@@ -65,10 +66,7 @@
           <header>
             <span class="treino-mod">{{ MODALIDADES[t.modalidade] }}</span>
             {% if t.titulo %}<b>{{ t.titulo }}</b>{% endif %}
-            <span class="treino-total">
-              {% if t.modalidade == 'corrida' %}{{ fmt_dist(t.metros) if t.metros else '' }}
-              {% else %}{{ t.itens | length }} exercício{{ 's' if t.itens | length != 1 }} · {{ t.series_total }} séries{% endif %}
-            </span>
+            <span class="treino-total" title="Volume da sessão">{{ vol(t.modalidade, t.vol) }}</span>
           </header>
           {% if t.modalidade == 'corrida' %}
             <ol class="blocos">{% for b in t.itens %}<li>{{ bloco_corrida(b) }}</li>{% endfor %}</ol>

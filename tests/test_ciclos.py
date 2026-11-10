@@ -253,3 +253,74 @@ def test_curva_nao_ultrapassa_os_niveis():
             ys = [float(v) for v in re.findall(r"[\d.]+,([\d.]+)", g[chave])]
             pts = [y for _, y in g["pontos"][chave]]
             assert min(pts) - 0.05 <= min(ys) and max(ys) <= max(pts) + 0.05, (niveis, chave)
+
+
+# ------------------------------------------------------------- metodologia × planejado
+def test_intensidade_planejada_academia_segue_a_tabela():
+    m = {1: {"series": 10, "reps_x_series": 175, "series_com_reps": 10},   # 17,5 reps -> 2 (baixa)
+         2: {"series": 10, "reps_x_series": 90, "series_com_reps": 10},    # 9 reps    -> 3 (moderada)
+         3: {"series": 10, "reps_x_series": 50, "series_com_reps": 10},    # 5 reps    -> 4 (alta)
+         4: {"series": 10, "reps_x_series": 20, "series_com_reps": 10},    # 2 reps    -> 5 (muito alta)
+         5: {"series": 4, "reps_x_series": 0, "series_com_reps": 0}}       # sem reps numéricas: sem intensidade
+    n = ciclos.niveis_planejados(m, "academia", referencia=20)
+    assert [round(n["intensidade"][w], 2) for w in (1, 2, 3, 4)] == [2, 3, 4, 5] and 5 not in n["intensidade"]
+    assert n["volume"][1] == 2.5 and n["volume"][5] == 1 and not n["relativa"]
+
+
+def test_intensidade_planejada_corrida_por_qualidade_e_volume_relativo():
+    m = {1: {"metros": 30000, "segundos": 10000, "segundos_qualidade": 0},
+         2: {"metros": 60000, "segundos": 10000, "segundos_qualidade": 2000},   # 20% -> 3
+         3: {"metros": 45000, "segundos": 10000, "segundos_qualidade": 5000}}   # 50% -> 5 (teto)
+    n = ciclos.niveis_planejados(m, "corrida")                                  # sem referência: relativa
+    assert n["relativa"] and n["referencia"] == 60 and n["volume"] == {1: 2.5, 2: 5.0, 3: 3.75}
+    assert [n["intensidade"][w] for w in (1, 2, 3)] == [1.5, 3, 5]
+    assert ciclos.niveis_planejados(m, "corrida", referencia=40)["volume"][2] == 7.5   # passa de 5
+
+
+def test_excessos_por_fase():
+    ini = date(2026, 1, 5)
+    fases = ciclos.com_datas(ciclos.fases_modelo("corrida", ini, date(2026, 4, 26)), ini)  # base: vol 5, int 2
+    plan = {"volume": {1: 5.4, 2: 5.6, 3: 3.0}, "intensidade": {1: 2.4, 2: 3.0}}
+    acima = ciclos.excessos(fases, plan)
+    assert acima == {"volume": {2}, "intensidade": {2}}          # 5,4 está dentro da tolerância (0,5)
+    assert fases[0]["acima"] == {"volume": 1, "intensidade": 1} and fases[1]["acima"] == {"volume": 0, "intensidade": 0}
+
+
+def test_grafico_com_planejado_e_eixo_que_cresce():
+    ini = date(2026, 1, 5)
+    fases = ciclos.com_datas(ciclos.fases_modelo("corrida", ini, date(2026, 4, 26)), ini)
+    g = ciclos.grafico(fases, 18, ini, {"volume": {1: 4, 2: 6.3, 4: 5}, "intensidade": {}}, {"volume": {2}, "intensidade": set()})
+    assert g["ymax"] == 7
+    assert g["plan_path"]["volume"].count("M") == 2               # semana 3 sem treino interrompe a linha
+    assert [p["acima"] for p in g["plan_pts"]["volume"]] == [False, True, False]
+    assert g["meses"][0]["rotulo"] == "fev" and any(m["rotulo"] == "abr" for m in g["meses"])
+
+
+def test_referencia_no_macro_e_alerta_na_tela(base):
+    c = _login("c-prof1@t.com")
+    r = _novo_macro(c, base["a2"], nome="Com referência", ref_km_semana="abc", ref_series_semana="-3")
+    assert "Referência de km/semana" in r.text and "Referência de séries/semana" in r.text
+    r = _novo_macro(c, base["a2"], nome="Com referência", data_inicio="2026-11-16", data_competicao="2027-04-10",
+                    ref_km_semana="40", ref_series_semana="60")
+    mid = int(r.headers["Location"].rsplit("/", 1)[1])
+    assert db.query_one("SELECT ref_km_semana, ref_series_semana FROM macrociclos WHERE id = ?", (mid,)) == \
+        {"ref_km_semana": 40.0, "ref_series_semana": 60}
+    # semana 1 (Base Aeróbica: volume 5, intensidade 2) com 60 km, metade em tiros -> volume 7,5 e intensidade 5
+    with db.Transacao() as t:
+        tid = t.insert("INSERT INTO treinos (macrociclo_id, data, modalidade) VALUES (?, '2026-11-17', 'corrida')", (mid,))
+        t.insert("INSERT INTO treino_corrida (treino_id, ordem, tipo, repeticoes, distancia_m, pace) VALUES (?, 1, 'Rodagem', 1, 30000, '5:00')", (tid,))
+        t.insert("INSERT INTO treino_corrida (treino_id, ordem, tipo, repeticoes, distancia_m, pace) VALUES (?, 2, 'Tiros', 30, 1000, '5:00')", (tid,))
+    pag = c.get(f"/instrutor/ciclos/{mid}").text
+    assert "Volume 5 = 40 km/semana" in pag and "ACIMA da metodologia" in pag
+    assert "▲ volume acima em 1 sem." in pag and "▲ intensidade acima em 1 sem." in pag
+    assert 'data-alterna="plan-vol"' in pag and 'data-camada="met-int"' in pag
+    assert 'value="40"' in c.get(f"/instrutor/ciclos/{mid}/editar").text
+
+    # sem referência: escala relativa e aviso para definir
+    mid2 = int(_novo_macro(c, base["a2"], nome="Sem ref").headers["Location"].rsplit("/", 1)[1])
+    with db.Transacao() as t:
+        tid = t.insert("INSERT INTO treinos (macrociclo_id, data, modalidade) VALUES (?, '2026-11-17', 'corrida')", (mid2,))
+        t.insert("INSERT INTO treino_corrida (treino_id, ordem, tipo, repeticoes, distancia_m) VALUES (?, 1, 'Rodagem', 1, 10000)", (tid,))
+    pag = c.get(f"/instrutor/ciclos/{mid2}").text
+    assert "Escala relativa: volume 5 = maior semana planejada (10 km)" in pag and "Defina a referência" in pag
+    assert "Defina a referência" not in _login("c-aluno2@t.com").get(f"/aluno/ciclos/{mid2}").text

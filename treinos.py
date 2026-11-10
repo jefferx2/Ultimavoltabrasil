@@ -6,6 +6,9 @@ import db
 
 TIPOS_CORRIDA = ["Aquecimento", "Educativos", "Rodagem", "Regenerativo", "Longão", "Progressivo", "Fartlek",
                  "Limiar", "Intervalado", "Tiros", "Ritmo de prova", "Subidas", "Desaquecimento"]
+# Blocos que contam como "qualidade" (intensidade) na corrida
+TIPOS_QUALIDADE = {"Fartlek", "Limiar", "Intervalado", "Tiros", "Ritmo de prova", "Subidas", "Progressivo"}
+PACE_PADRAO = 330  # 5:30/km — só para estimar o tempo de blocos com distância e sem tempo, no cálculo de intensidade
 DIAS = ["Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado", "Domingo"]
 DIAS_CURTOS = ["seg", "ter", "qua", "qui", "sex", "sáb", "dom"]
 
@@ -42,6 +45,178 @@ def fmt_distancia(metros):
     return (f"{km:.0f}" if km == int(km) else f"{km:.2f}".rstrip("0").replace(".", ",")) + " km"
 
 
+# ---------------------------------------------------------------- tempo, pace e carga
+def ler_duracao(texto):
+    """Duração em segundos. Aceita: '72 s', '20 min', '1 min 30', "1'30", '1:12', '1:05:00', '1h10', '45'(=min).
+    Texto que não é uma duração simples (ex.: '1 min forte / 1 min leve') -> None."""
+    t = (texto or "").strip().lower().replace(",", ".").replace(" ", "")
+    if not t:
+        return None
+    m = re.fullmatch(r"(\d+):(\d{1,2})(?::(\d{1,2}))?", t)
+    if m:
+        a, b, c = int(m.group(1)), int(m.group(2)), m.group(3)
+        return a * 3600 + b * 60 + int(c) if c is not None else a * 60 + b
+    t = t.replace("segundos", "s").replace("segundo", "s").replace("seg", "s").replace("minutos", "min") \
+         .replace("minuto", "min").replace("horas", "h").replace("hora", "h").replace("''", '"')
+    partes = re.findall(r"(\d+(?:\.\d+)?)(h|min|m|'|s|\")?", t)
+    if not partes or "".join(n + u for n, u in partes) != t:
+        return None
+    total, anterior = 0.0, None
+    for num, unid in partes:
+        v = float(num)
+        if not unid:  # sem unidade: depende do que veio antes
+            unid = {"h": "min", "min": "s", "m": "s", "'": "s"}.get(anterior, "min")
+        total += v * {"h": 3600, "min": 60, "m": 60, "'": 60, "s": 1, '"': 1}[unid]
+        anterior = unid
+    return round(total) if total > 0 else None
+
+
+def fmt_duracao(seg):
+    if not seg:
+        return ""
+    seg = round(seg)
+    h, resto = divmod(seg, 3600)
+    m, s = divmod(resto, 60)
+    if h:
+        return f"{h}h{m:02d}"
+    if m and s:
+        return f"{m} min {s:02d}" if m < 10 else f"{m} min"
+    return f"{m} min" if m else f"{s} s"
+
+
+PACE_MINIMO = 120  # 2:00/km — abaixo disso o valor é tempo da repetição, não pace por km
+
+
+def ler_pace(texto):
+    """Pace em segundos por km. Aceita '5:10', '5:10/km', "5'10". Outros formatos ou < 2:00/km -> None."""
+    t = (texto or "").strip().lower().replace(" ", "").replace("min/km", "").replace("/km", "")
+    m = re.fullmatch(r"(\d{1,2})[:'](\d{2})\"?", t)
+    if not m:
+        return None
+    seg = int(m.group(1)) * 60 + int(m.group(2))
+    return seg if seg >= PACE_MINIMO else None
+
+
+def tempo_bloco(item):
+    """Tempo de UMA repetição do bloco, em segundos (ou None).
+    Ordem: duração; distância × pace/km; o 'pace' como tempo da repetição (ex.: 400 m @ 72 s)."""
+    dur = ler_duracao(item.get("duracao"))
+    if dur:
+        return dur
+    dist = item.get("distancia_m") or 0
+    if not dist:
+        return None
+    pace = ler_pace(item.get("pace"))
+    if pace:
+        return dist / 1000 * pace
+    if "/km" not in (item.get("pace") or "").lower():
+        return ler_duracao(item.get("pace"))
+    return None
+
+
+def fmt_pace(seg_km):
+    seg_km = round(seg_km)
+    return f"{seg_km // 60}:{seg_km % 60:02d}/km"
+
+
+def ler_kg(texto):
+    """Carga em kg quando informada em kg ('60', '60 kg', '22,5kg'). Percentual ou texto -> None."""
+    t = (texto or "").strip().lower().replace(" ", "").replace(",", ".")
+    m = re.fullmatch(r"(\d+(?:\.\d+)?)(kg)?", t)
+    return float(m.group(1)) if m else None
+
+
+def ler_reps(texto):
+    """Repetições para o cálculo de volume: '10' -> 10, '8–10' -> 9 (média). Tempo ('40 s') -> None."""
+    t = (texto or "").strip().lower().replace(" ", "")
+    m = re.fullmatch(r"(\d+)(?:[-–a](\d+))?(?:reps?)?", t)
+    if not m:
+        return None
+    a, b = int(m.group(1)), m.group(2)
+    return (a + int(b)) / 2 if b else a
+
+
+def volume(modalidade, itens):
+    """Volume planejado de uma sessão. 'completo' = False quando algum item não pôde ser somado."""
+    if modalidade == "corrida":
+        metros = segundos = 0
+        completo = True
+        for i in itens:
+            reps = i.get("repeticoes") or 1
+            metros += (i.get("distancia_m") or 0) * reps
+            tempo = tempo_bloco(i)
+            if tempo:
+                segundos += tempo * reps
+            else:
+                completo = False
+        return {"metros": metros, "segundos": round(segundos), "completo": completo}
+    series = sum(i.get("series") or 0 for i in itens)
+    reps = kg = 0.0
+    completo = True
+    for i in itens:
+        r = ler_reps(i.get("repeticoes"))
+        if r is None:
+            completo = False
+            continue
+        reps += r * (i.get("series") or 0)
+        c = ler_kg(i.get("carga"))
+        if c is None:
+            completo = False
+        else:
+            kg += c * r * (i.get("series") or 0)
+    return {"series": series, "reps": round(reps), "kg": round(kg), "completo": completo}
+
+
+def somar(vols):
+    total = {"metros": 0, "segundos": 0, "series": 0, "reps": 0, "kg": 0, "sessoes": 0, "completo": True}
+    for v in vols:
+        total["sessoes"] += 1
+        for k in ("metros", "segundos", "series", "reps", "kg"):
+            total[k] += v.get(k, 0)
+        total["completo"] = total["completo"] and v["completo"]
+    return total
+
+
+def fmt_km(metros):
+    if not metros:
+        return "0 km"
+    km = metros / 1000
+    return (f"{km:.0f}" if abs(km - round(km)) < 0.05 else f"{km:.1f}".replace(".", ",")) + " km"
+
+
+def fmt_kg(kg):
+    return f"{kg:,.0f}".replace(",", ".") + " kg"
+
+
+def metricas_semanais(lista, inicio):
+    """Soma por semana do macrociclo (1, 2, ...) os dados usados no gráfico planejado.
+    corrida:  metros, segundos (todos), segundos_qualidade
+    academia: series, reps_x_series e series_com_reps (para a média de reps por série)"""
+    sem = {"corrida": {}, "academia": {}}
+    for t in lista:
+        w = semana_de(inicio, date.fromisoformat(t["data"]))
+        if t["modalidade"] == "corrida":
+            m = sem["corrida"].setdefault(w, {"metros": 0, "segundos": 0.0, "segundos_qualidade": 0.0})
+            for i in t["itens"]:
+                reps = i.get("repeticoes") or 1
+                dist = i.get("distancia_m") or 0
+                m["metros"] += dist * reps
+                tempo = tempo_bloco(i) or (dist / 1000 * PACE_PADRAO if dist else 0)
+                m["segundos"] += tempo * reps
+                if i.get("tipo") in TIPOS_QUALIDADE:
+                    m["segundos_qualidade"] += tempo * reps
+        else:
+            m = sem["academia"].setdefault(w, {"series": 0, "reps_x_series": 0.0, "series_com_reps": 0})
+            for i in t["itens"]:
+                sr = i.get("series") or 0
+                m["series"] += sr
+                r = ler_reps(i.get("repeticoes"))
+                if r is not None:
+                    m["reps_x_series"] += r * sr
+                    m["series_com_reps"] += sr
+    return sem
+
+
 # ---------------------------------------------------------------- semanas
 def inicio_semana(macro_inicio, n):
     return macro_inicio + timedelta(weeks=n - 1)
@@ -69,10 +244,7 @@ def carregar(macro_id, de, ate):
     por_dia = {}
     for t in lista:
         t["itens"] = itens[t["id"]]
-        if t["modalidade"] == "corrida":
-            t["metros"] = sum((i["distancia_m"] or 0) * i["repeticoes"] for i in t["itens"])
-        else:
-            t["series_total"] = sum(i["series"] for i in t["itens"])
+        t["vol"] = volume(t["modalidade"], t["itens"])
         por_dia.setdefault(t["data"], []).append(t)
     return por_dia
 
