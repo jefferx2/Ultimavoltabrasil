@@ -10,7 +10,11 @@
       <p>Cadastro e acesso dos alunos.</p>
       <span class="numero">{{ total_alunos }}</span> <span class="tag">ativo{{ 's' if total_alunos != 1 }}</span>
     </a>
-    <div class="card"><h2>Ciclos</h2><p>Macrociclo e fases de corrida e academia por aluno.</p><span class="tag">em breve</span></div>
+    <a class="card card-link" href="{{ url_for('alunos') }}">
+      <h2>Ciclos</h2>
+      <p>Abra a ficha do aluno para montar o macrociclo com as fases de academia e corrida.</p>
+      <span class="numero">{{ total_macros }}</span> <span class="tag">macrociclo{{ 's' if total_macros != 1 }}</span>
+    </a>
     <div class="card"><h2>Acompanhamento</h2><p>Desempenho registrado pelos alunos.</p><span class="tag">em breve</span></div>
   </div>
 </section>

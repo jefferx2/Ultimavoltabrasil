@@ -1,0 +1,144 @@
+{# Visualizações de um macrociclo. Espera: v (ciclos.montar), macro, editavel #}
+
+{# ---------- Onde estou agora ---------- #}
+{% set tem_atual = v.atual.academia or v.atual.corrida %}
+<div class="agora">
+  {% for mod, rot in MODALIDADES.items() %}
+    {% set a = v.atual[mod] %}
+    <div class="agora-card" {% if a %}style="--cor: {{ a.fase.cor }}"{% endif %}>
+      <span class="agora-mod">{{ rot }}</span>
+      {% if a %}
+        <b>Fase {{ a.fase.ordem }} · {{ a.fase.nome }}</b>
+        <span>Semana {{ a.semana }} de {{ a.fase.semanas }} · até {{ a.fase.fim | data_br }}</span>
+      {% elif not v.grupos[mod] %}
+        <b class="mudo">Sem fases</b>
+      {% elif v.hoje < v.inicio %}
+        <b class="mudo">Começa em {{ v.inicio | data_br }}</b>
+      {% else %}
+        <b class="mudo">Concluído</b>
+      {% endif %}
+    </div>
+  {% endfor %}
+  {% if v.competicao %}
+    {% set dias = (v.competicao - v.hoje).days %}
+    <div class="agora-card agora-comp">
+      <span class="agora-mod">Competição</span>
+      <b>{{ v.competicao | data_br }}</b>
+      <span>{% if dias > 0 %}faltam {{ dias }} dia{{ 's' if dias != 1 }} ({{ (dias / 7) | round(0, 'floor') | int }} sem.){% elif dias == 0 %}é hoje!{% else %}já aconteceu{% endif %}</span>
+    </div>
+  {% endif %}
+</div>
+
+{# ---------- Linha do tempo ---------- #}
+<div class="bloco">
+  <h2>Linha do tempo</h2>
+  <div class="timeline">
+    <div class="tl-meses">
+      {% for m in v.marcas %}<span style="left: {{ '%.2f' % m.x }}%">{{ m.rotulo }}</span>{% endfor %}
+    </div>
+    {% for mod, rot in MODALIDADES.items() %}
+    <div class="tl-linha">
+      <div class="tl-rotulo">{{ rot }}</div>
+      <div class="tl-trilho">
+        {% for f in v.grupos[mod] %}
+          <a class="tl-fase" style="left: {{ '%.2f' % f.x }}%; width: {{ '%.2f' % f.w }}%; background: {{ f.cor }}"
+             href="#{{ mod }}-f{{ f.ordem }}"
+             title="Fase {{ f.ordem }} · {{ f.nome }} — {{ f.inicio | data_br }} a {{ f.fim | data_br }} ({{ f.semanas }} sem.)">
+            <span>{{ f.ordem }}. {{ f.nome }}</span>
+          </a>
+        {% else %}
+          <span class="tl-vazio">Sem fases</span>
+        {% endfor %}
+      </div>
+    </div>
+    {% endfor %}
+    {% if v.hoje_x is not none %}<div class="tl-hoje{{ ' tl-dir' if v.hoje_x > 70 }}" style="left: calc(var(--tl-rot) + (100% - var(--tl-rot)) * {{ '%.4f' % (v.hoje_x / 100) }})"><span>hoje</span></div>{% endif %}
+    {% if v.comp_x is not none %}<div class="tl-comp{{ ' tl-dir' if v.comp_x > 70 }}" style="left: calc(var(--tl-rot) + (100% - var(--tl-rot)) * {{ '%.4f' % (v.comp_x / 100) }})"><span>🏁 competição</span></div>{% endif %}
+  </div>
+  <p class="nota">{{ v.inicio | data_br }} a {{ v.fim | data_br }} · {{ v.total_semanas }} semanas</p>
+</div>
+
+{# ---------- Por modalidade: gráfico + tabela ---------- #}
+{% for mod, rot in MODALIDADES.items() %}
+{% set fases = v.grupos[mod] %}
+<div class="bloco" id="{{ mod }}">
+  <div class="cabecalho">
+    <h2>{{ rot }}</h2>
+    {% if editavel %}<a class="btn btn-contorno btn-peq" href="{{ url_for('fase_nova', macro_id=macro.id, modalidade=mod) }}">+ Fase</a>{% endif %}
+  </div>
+
+  {% if v.avisos[mod] %}<div class="alerta alerta-aviso">{{ v.avisos[mod] }}</div>{% endif %}
+
+  {% if fases %}
+  {% set g = v.graficos[mod] %}
+  <figure class="grafico">
+    <svg viewBox="0 0 {{ g.largura }} {{ g.altura }}" role="img" aria-label="Volume e intensidade ao longo das fases de {{ rot | lower }}">
+      {% for fx in g.faixas %}
+        <rect x="{{ '%.1f' % fx.x }}" y="{{ g.topo }}" width="{{ '%.1f' % fx.w }}" height="{{ g.h }}" fill="{{ fx.cor }}" opacity=".08"/>
+      {% endfor %}
+      {% for n, y in g.niveis %}
+        <line x1="{{ g.esq }}" x2="{{ g.esq + g.w }}" y1="{{ '%.1f' % y }}" y2="{{ '%.1f' % y }}" class="g-grade"/>
+        <text x="{{ g.esq - 8 }}" y="{{ '%.1f' % (y + 4) }}" class="g-eixo" text-anchor="end">{{ n }}</text>
+      {% endfor %}
+      {% for x in g.divisorias %}
+        <line x1="{{ '%.1f' % x }}" x2="{{ '%.1f' % x }}" y1="{{ g.topo }}" y2="{{ g.topo + g.h }}" class="g-div"/>
+      {% endfor %}
+      <path d="{{ g.volume }}" class="g-volume"/>
+      <path d="{{ g.intensidade }}" class="g-intens"/>
+      {% for x, y in g.pontos.volume %}<circle cx="{{ '%.1f' % x }}" cy="{{ '%.1f' % y }}" r="4" class="g-pt-volume"/>{% endfor %}
+      {% for x, y in g.pontos.intensidade %}<circle cx="{{ '%.1f' % x }}" cy="{{ '%.1f' % y }}" r="4" class="g-pt-intens"/>{% endfor %}
+      {% for f in fases %}
+        {% set fx = g.faixas[loop.index0] %}
+        <text x="{{ '%.1f' % (fx.x + fx.w / 2) }}" y="{{ g.altura - 8 }}" class="g-fase" text-anchor="middle">{{ f.ordem }}</text>
+      {% endfor %}
+    </svg>
+    <figcaption>
+      <span class="leg leg-volume">Volume</span>
+      <span class="leg leg-intens">Intensidade</span>
+      <span class="leg-nota">escala 1 (muito baixo) a 5 (muito alto) · números = fases</span>
+    </figcaption>
+  </figure>
+
+  <div class="tabela-wrap">
+    <table class="tabela tabela-fases">
+      <thead>
+        <tr>
+          <th>Fases da periodização</th>
+          {% for f in fases %}<th id="{{ mod }}-f{{ f.ordem }}" style="border-top: 4px solid {{ f.cor }}">Fase {{ f.ordem }}</th>{% endfor %}
+        </tr>
+      </thead>
+      <tbody>
+        <tr><th>Objetivo</th>{% for f in fases %}<td><b>{{ f.nome }}</b>{% if f.objetivo %}<small>{{ f.objetivo }}</small>{% endif %}</td>{% endfor %}</tr>
+        <tr><th>Período</th>{% for f in fases %}<td>{{ f.semanas }} sem.<small>{{ f.inicio | data_curta }} – {{ f.fim | data_curta }}</small></td>{% endfor %}</tr>
+        {% if mod == 'academia' %}
+        <tr><th>Séries por exercício</th>{% for f in fases %}<td>{{ f.series or '—' }}</td>{% endfor %}</tr>
+        <tr><th>Repetições por série</th>{% for f in fases %}<td>{{ f.repeticoes or '—' }}</td>{% endfor %}</tr>
+        {% endif %}
+        <tr><th>Intensidade</th>{% for f in fases %}<td><span class="nivel n{{ f.intensidade }}">{{ NIVEIS[f.intensidade] }}</span>{% if f.intensidade_ref %}<small>{{ f.intensidade_ref }}</small>{% endif %}</td>{% endfor %}</tr>
+        <tr><th>Volume</th>{% for f in fases %}<td><span class="nivel n{{ f.volume }}">{{ NIVEIS_VOLUME[f.volume] }}</span>{% if f.volume_ref %}<small>{{ f.volume_ref }}</small>{% endif %}</td>{% endfor %}</tr>
+        {% if fases | selectattr('conteudo') | list %}
+        <tr><th>Orientações</th>{% for f in fases %}<td class="texto">{{ f.conteudo or '' }}</td>{% endfor %}</tr>
+        {% endif %}
+        {% if editavel %}
+        <tr class="linha-acoes"><th></th>{% for f in fases %}
+          <td>
+            <a class="link" href="{{ url_for('fase_editar', fase_id=f.id) }}">Editar</a>
+            <form method="post" action="{{ url_for('fase_mover', fase_id=f.id) }}" class="inline">
+              <input type="hidden" name="csrf" value="{{ csrf_token }}">
+              {% if not loop.first %}<button name="direcao" value="acima" title="Mover para antes">◀</button>{% endif %}
+              {% if not loop.last %}<button name="direcao" value="abaixo" title="Mover para depois">▶</button>{% endif %}
+            </form>
+          </td>{% endfor %}
+        </tr>
+        {% endif %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+    <div class="vazio">
+      <p>Nenhuma fase de {{ rot | lower }} neste macrociclo.</p>
+      {% if editavel %}<a class="btn" href="{{ url_for('fase_nova', macro_id=macro.id, modalidade=mod) }}">Adicionar fase</a>{% endif %}
+    </div>
+  {% endif %}
+</div>
+{% endfor %}

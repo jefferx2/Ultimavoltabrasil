@@ -1,12 +1,35 @@
 {% extends "base.html" %}
-{% block titulo %}Aluno · Última Volta Brasil{% endblock %}
+{% block titulo %}Meus treinos · Última Volta Brasil{% endblock %}
 {% block conteudo %}
 <section class="painel">
   <p class="sobretitulo">Área do aluno</p>
-  <h1>Olá, {{ usuario.nome.split()[0] }}</h1>
-  <div class="cards">
-    <div class="card"><h2>Ciclo atual</h2><p>Seus treinos de corrida e academia da semana.</p><span class="tag">em breve</span></div>
-    <div class="card"><h2>Histórico</h2><p>Ciclos e treinos já realizados.</p><span class="tag">em breve</span></div>
-  </div>
+  {% if macro %}
+    <div class="cabecalho">
+      <div>
+        <h1>{{ macro.nome }}</h1>
+        {% if macro.competicao %}<p class="sub">🏁 {{ macro.competicao }}</p>{% endif %}
+      </div>
+    </div>
+    {% if macro.observacoes %}<p class="nota bloco-obs">{{ macro.observacoes }}</p>{% endif %}
+    {% set editavel = false %}
+    {% include "_ciclo_visual.html" %}
+
+    {% if macros | length > 1 %}
+    <div class="bloco">
+      <h2>Outros macrociclos</h2>
+      <ul class="lista-simples">
+        {% for m in macros if m.id != macro.id %}
+          <li><a href="{{ url_for('aluno_macro', macro_id=m.id) }}"><b>{{ m.nome }}</b></a>
+            <span>início {{ m.data_inicio | data_br }}{% if m.data_competicao %} · competição {{ m.data_competicao | data_br }}{% endif %}</span></li>
+        {% endfor %}
+      </ul>
+    </div>
+    {% endif %}
+  {% else %}
+    <h1>Olá, {{ usuario.nome.split()[0] }}</h1>
+    <div class="vazio">
+      <p>Seu professor ainda não montou o seu macrociclo.<br>Assim que estiver pronto, ele aparece aqui.</p>
+    </div>
+  {% endif %}
 </section>
 {% endblock %}

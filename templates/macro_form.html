@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+{% block titulo %}{{ 'Novo macrociclo' if novo else macro.nome }} · Última Volta Brasil{% endblock %}
+{% block conteudo %}
+<section class="painel painel-estreito">
+  <p class="sobretitulo">
+    {% if novo %}<a href="{{ url_for('aluno_editar', aluno_id=aluno.id) }}">← {{ aluno.nome }}</a>
+    {% else %}<a href="{{ url_for('macro_ver', macro_id=macro.id) }}">← {{ macro.nome }}</a>{% endif %}
+  </p>
+  <h1>{{ 'Novo macrociclo' if novo else 'Editar macrociclo' }}</h1>
+  <p class="sub">Aluno: <b>{{ aluno.nome }}</b></p>
+
+  <form method="post" class="form">
+    <input type="hidden" name="csrf" value="{{ csrf_token }}">
+    <div class="grade">
+      <label class="col-2">Nome do macrociclo *
+        <input name="nome" required placeholder="ex.: Temporada 2027" value="{{ macro.nome or '' }}">
+      </label>
+      <label class="col-2">Competição alvo
+        <input name="competicao" placeholder="ex.: Campeonato Paulista Master — 800 m" value="{{ macro.competicao or '' }}">
+      </label>
+      <label>Data de início *
+        <input type="date" name="data_inicio" required value="{{ macro.data_inicio or '' }}">
+      </label>
+      <label>Data da competição
+        <input type="date" name="data_competicao" value="{{ macro.data_competicao or '' }}">
+        <small>O pico é encaixado na semana dessa data.</small>
+      </label>
+      <label class="col-2">Observações
+        <textarea name="observacoes" rows="2">{{ macro.observacoes or '' }}</textarea>
+      </label>
+      {% if novo %}
+      <fieldset class="col-2 caixa-opcoes">
+        <legend>Começar com o modelo de periodização linear (5 fases)</legend>
+        <label class="check"><input type="checkbox" name="modelo_academia" value="1" {{ 'checked' if macro.modelo_academia }}>
+          Academia: Endurance-Hipertrofia → Hipertrofia → Potência → Pico → Transição</label>
+        <label class="check"><input type="checkbox" name="modelo_corrida" value="1" {{ 'checked' if macro.modelo_corrida }}>
+          Corrida: Base Aeróbica → Desenvolvimento → Específico → Polimento/Pico → Transição</label>
+        <small>As semanas são distribuídas automaticamente até a competição. Tudo pode ser editado depois.</small>
+      </fieldset>
+      {% else %}
+      <p class="col-2 nota">Mudar as datas aqui não altera as semanas das fases. Se precisar, ajuste cada fase depois.</p>
+      {% endif %}
+    </div>
+    <div class="botoes">
+      <button class="btn" type="submit">{{ 'Criar macrociclo' if novo else 'Salvar' }}</button>
+      <a class="link" href="{{ url_for('aluno_editar', aluno_id=aluno.id) if novo else url_for('macro_ver', macro_id=macro.id) }}">Cancelar</a>
+    </div>
+  </form>
+
+  {% if not novo %}
+  <div class="zona">
+    <div class="zona-linha">
+      <div><b>Excluir macrociclo</b><p>Apaga o macrociclo e todas as fases. Não dá para desfazer.</p></div>
+      <form method="post" action="{{ url_for('macro_excluir', macro_id=macro.id) }}"
+            onsubmit="return confirm('Excluir este macrociclo e todas as fases? Não dá para desfazer.')">
+        <input type="hidden" name="csrf" value="{{ csrf_token }}">
+        <button class="btn btn-contorno" type="submit">Excluir</button>
+      </form>
+    </div>
+  </div>
+  {% endif %}
+</section>
+{% endblock %}

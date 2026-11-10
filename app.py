@@ -9,6 +9,7 @@ import click
 from flask import Flask, abort, flash, g, redirect, render_template, request, session, url_for
 from werkzeug.security import check_password_hash, generate_password_hash
 
+import ciclos
 import db
 
 app = Flask(__name__)
@@ -74,6 +75,14 @@ def data_br(valor):
         return valor or ""
 
 
+@app.template_filter("data_curta")
+def data_curta(valor):
+    try:
+        return date.fromisoformat(str(valor)[:10]).strftime("%d/%m")
+    except ValueError:
+        return valor or ""
+
+
 @app.before_request
 def antes():
     if request.method == "POST":
@@ -90,7 +99,8 @@ def antes():
 def injetar():
     if "csrf" not in session:
         session["csrf"] = secrets.token_hex(16)
-    return {"csrf_token": session["csrf"], "usuario": usuario_atual()}
+    return {"csrf_token": session["csrf"], "usuario": usuario_atual(),
+            "MODALIDADES": ciclos.MODALIDADES, "NIVEIS": ciclos.NIVEIS, "NIVEIS_VOLUME": ciclos.NIVEIS_VOLUME}
 
 
 # ---------------------------------------------------------------- públicas / login
@@ -160,7 +170,10 @@ def painel_instrutor(user):
     total = db.query_one(
         "SELECT COUNT(*) AS n FROM usuarios WHERE perfil = 'aluno' AND ativo = 1 AND instrutor_id = ?",
         (user["id"],))["n"]
-    return render_template("painel_instrutor.html", total_alunos=total)
+    total_macros = db.query_one(
+        "SELECT COUNT(*) AS n FROM macrociclos m JOIN usuarios u ON u.id = m.aluno_id "
+        "WHERE u.instrutor_id = ? AND u.ativo = 1", (user["id"],))["n"]
+    return render_template("painel_instrutor.html", total_alunos=total, total_macros=total_macros)
 
 
 def _aluno_do_instrutor(aluno_id, instrutor_id):
@@ -254,7 +267,9 @@ def aluno_editar(user, aluno_id):
                  dados["telefone"], dados["observacoes"], aluno_id))
             flash("Dados do aluno salvos.", "ok")
             return redirect(url_for("alunos"))
-    return render_template("aluno_form.html", aluno=aluno, novo=False, provas=PROVAS_SUGERIDAS, senha_min=SENHA_MIN)
+    macros = db.query_all("SELECT * FROM macrociclos WHERE aluno_id = ? ORDER BY data_inicio DESC", (aluno_id,))
+    return render_template("aluno_form.html", aluno=aluno, novo=False, provas=PROVAS_SUGERIDAS,
+                           senha_min=SENHA_MIN, macros=macros)
 
 
 @app.route("/instrutor/alunos/<int:aluno_id>/redefinir-senha", methods=["POST"])
@@ -278,11 +293,279 @@ def aluno_status(user, aluno_id):
     return redirect(url_for("alunos", mostrar=request.form.get("mostrar", "ativos")))
 
 
+# ---------------------------------------------------------------- macrociclos (professor)
+def _macro_do_instrutor(macro_id, instrutor_id):
+    macro = db.query_one(
+        "SELECT m.*, u.nome AS aluno_nome FROM macrociclos m JOIN usuarios u ON u.id = m.aluno_id "
+        "WHERE m.id = ? AND u.instrutor_id = ?", (macro_id, instrutor_id))
+    if not macro:
+        abort(404)
+    return macro
+
+
+def _fase_do_instrutor(fase_id, instrutor_id):
+    fase = db.query_one(
+        "SELECT f.* FROM fases f JOIN macrociclos m ON m.id = f.macrociclo_id "
+        "JOIN usuarios u ON u.id = m.aluno_id WHERE f.id = ? AND u.instrutor_id = ?",
+        (fase_id, instrutor_id))
+    if not fase:
+        abort(404)
+    return fase
+
+
+def _data(valor, obrigatoria=False):
+    valor = (valor or "").strip()
+    if not valor:
+        return None, ("obrigatória" if obrigatoria else None)
+    try:
+        return date.fromisoformat(valor), None
+    except ValueError:
+        return None, "inválida"
+
+
+def _validar_macro(form):
+    dados = {
+        "nome": form.get("nome", "").strip(),
+        "competicao": form.get("competicao", "").strip() or None,
+        "observacoes": form.get("observacoes", "").strip() or None,
+    }
+    erros = []
+    if not dados["nome"]:
+        erros.append("Informe o nome do macrociclo.")
+    ini, e1 = _data(form.get("data_inicio"), obrigatoria=True)
+    comp, e2 = _data(form.get("data_competicao"))
+    if e1:
+        erros.append(f"Data de início {e1}.")
+    if e2:
+        erros.append(f"Data da competição {e2}.")
+    if ini and comp and comp <= ini:
+        erros.append("A competição precisa ser depois da data de início.")
+    if ini and comp and (comp - ini).days > 7 * 104:
+        erros.append("O macrociclo pode ter no máximo 2 anos.")
+    dados["data_inicio"] = ini.isoformat() if ini else None
+    dados["data_competicao"] = comp.isoformat() if comp else None
+    return dados, erros
+
+
+def _fases_do_macro(macro_id):
+    return db.query_all("SELECT * FROM fases WHERE macrociclo_id = ? ORDER BY modalidade, ordem", (macro_id,))
+
+
+def _renumerar(t, macro_id, modalidade):
+    ids = [r["id"] for r in db.query_all(
+        "SELECT id FROM fases WHERE macrociclo_id = ? AND modalidade = ? ORDER BY ordem, id",
+        (macro_id, modalidade))]
+    for i, fid in enumerate(ids, 1):
+        t.execute("UPDATE fases SET ordem = ? WHERE id = ?", (i, fid))
+
+
+@app.route("/instrutor/alunos/<int:aluno_id>/ciclos/novo", methods=["GET", "POST"])
+@login_obrigatorio("instrutor")
+def macro_novo(user, aluno_id):
+    aluno = _aluno_do_instrutor(aluno_id, user["id"])
+    dados = {"data_inicio": date.today().isoformat(), "modelo_academia": True, "modelo_corrida": True}
+    if request.method == "POST":
+        dados, erros = _validar_macro(request.form)
+        dados["modelo_academia"] = bool(request.form.get("modelo_academia"))
+        dados["modelo_corrida"] = bool(request.form.get("modelo_corrida"))
+        if erros:
+            for e in erros:
+                flash(e, "erro")
+        else:
+            ini = date.fromisoformat(dados["data_inicio"])
+            comp = date.fromisoformat(dados["data_competicao"]) if dados["data_competicao"] else None
+            with db.Transacao() as t:
+                mid = t.insert(
+                    "INSERT INTO macrociclos (aluno_id, nome, competicao, data_inicio, data_competicao, observacoes) "
+                    "VALUES (?, ?, ?, ?, ?, ?)",
+                    (aluno_id, dados["nome"], dados["competicao"], dados["data_inicio"],
+                     dados["data_competicao"], dados["observacoes"]))
+                for mod in ciclos.MODALIDADES:
+                    if dados[f"modelo_{mod}"]:
+                        for f in ciclos.fases_modelo(mod, ini, comp):
+                            _inserir_fase(t, mid, mod, f)
+            flash("Macrociclo criado.", "ok")
+            return redirect(url_for("macro_ver", macro_id=mid))
+    return render_template("macro_form.html", aluno=aluno, macro=dados, novo=True)
+
+
+def _inserir_fase(t, macro_id, modalidade, f):
+    t.insert(
+        "INSERT INTO fases (macrociclo_id, modalidade, ordem, nome, objetivo, semanas, series, repeticoes, "
+        "intensidade, volume, intensidade_ref, volume_ref, conteudo) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        (macro_id, modalidade, f["ordem"], f["nome"], f.get("objetivo"), f["semanas"], f.get("series"),
+         f.get("repeticoes"), f["intensidade"], f["volume"], f.get("intensidade_ref"), f.get("volume_ref"),
+         f.get("conteudo")))
+
+
+@app.route("/instrutor/ciclos/<int:macro_id>")
+@login_obrigatorio("instrutor")
+def macro_ver(user, macro_id):
+    macro = _macro_do_instrutor(macro_id, user["id"])
+    visao = ciclos.montar(macro, _fases_do_macro(macro_id))
+    return render_template("macro_ver.html", macro=macro, v=visao, editavel=True)
+
+
+@app.route("/instrutor/ciclos/<int:macro_id>/editar", methods=["GET", "POST"])
+@login_obrigatorio("instrutor")
+def macro_editar(user, macro_id):
+    macro = _macro_do_instrutor(macro_id, user["id"])
+    aluno = _aluno_do_instrutor(macro["aluno_id"], user["id"])
+    if request.method == "POST":
+        dados, erros = _validar_macro(request.form)
+        if erros:
+            for e in erros:
+                flash(e, "erro")
+            macro.update(dados)
+        else:
+            db.execute("UPDATE macrociclos SET nome = ?, competicao = ?, data_inicio = ?, data_competicao = ?, "
+                       "observacoes = ? WHERE id = ?",
+                       (dados["nome"], dados["competicao"], dados["data_inicio"], dados["data_competicao"],
+                        dados["observacoes"], macro_id))
+            flash("Macrociclo salvo.", "ok")
+            return redirect(url_for("macro_ver", macro_id=macro_id))
+    return render_template("macro_form.html", aluno=aluno, macro=macro, novo=False)
+
+
+@app.route("/instrutor/ciclos/<int:macro_id>/excluir", methods=["POST"])
+@login_obrigatorio("instrutor")
+def macro_excluir(user, macro_id):
+    macro = _macro_do_instrutor(macro_id, user["id"])
+    with db.Transacao() as t:
+        t.execute("DELETE FROM fases WHERE macrociclo_id = ?", (macro_id,))
+        t.execute("DELETE FROM macrociclos WHERE id = ?", (macro_id,))
+    flash(f"Macrociclo “{macro['nome']}” excluído.", "ok")
+    return redirect(url_for("aluno_editar", aluno_id=macro["aluno_id"]))
+
+
+def _validar_fase(form):
+    dados = {k: form.get(k, "").strip() or None for k in
+             ("nome", "objetivo", "series", "repeticoes", "intensidade_ref", "volume_ref", "conteudo")}
+    erros = []
+    if not dados["nome"]:
+        erros.append("Informe o nome da fase.")
+    for campo, minimo, maximo, rotulo in (("semanas", 1, 104, "Semanas"),
+                                          ("intensidade", 1, 5, "Intensidade"), ("volume", 1, 5, "Volume")):
+        try:
+            v = int(form.get(campo, ""))
+            if not minimo <= v <= maximo:
+                raise ValueError
+            dados[campo] = v
+        except ValueError:
+            dados[campo] = None
+            erros.append(f"{rotulo}: informe um número de {minimo} a {maximo}.")
+    return dados, erros
+
+
+@app.route("/instrutor/ciclos/<int:macro_id>/fases/nova", methods=["GET", "POST"])
+@login_obrigatorio("instrutor")
+def fase_nova(user, macro_id):
+    macro = _macro_do_instrutor(macro_id, user["id"])
+    modalidade = request.values.get("modalidade", "")
+    if modalidade not in ciclos.MODALIDADES:
+        abort(404)
+    fase = {"modalidade": modalidade, "semanas": 4, "intensidade": 3, "volume": 3}
+    if request.method == "POST":
+        fase, erros = _validar_fase(request.form)
+        fase["modalidade"] = modalidade
+        if erros:
+            for e in erros:
+                flash(e, "erro")
+        else:
+            ultima = db.query_one("SELECT MAX(ordem) AS m FROM fases WHERE macrociclo_id = ? AND modalidade = ?",
+                                  (macro_id, modalidade))["m"] or 0
+            with db.Transacao() as t:
+                _inserir_fase(t, macro_id, modalidade, {**fase, "ordem": ultima + 1})
+            flash("Fase adicionada.", "ok")
+            return redirect(url_for("macro_ver", macro_id=macro_id) + f"#{modalidade}")
+    return render_template("fase_form.html", macro=macro, fase=fase, nova=True, c=ciclos)
+
+
+@app.route("/instrutor/fases/<int:fase_id>", methods=["GET", "POST"])
+@login_obrigatorio("instrutor")
+def fase_editar(user, fase_id):
+    fase = _fase_do_instrutor(fase_id, user["id"])
+    macro = _macro_do_instrutor(fase["macrociclo_id"], user["id"])
+    if request.method == "POST":
+        dados, erros = _validar_fase(request.form)
+        if erros:
+            for e in erros:
+                flash(e, "erro")
+            fase.update(dados)
+        else:
+            db.execute("UPDATE fases SET nome = ?, objetivo = ?, semanas = ?, series = ?, repeticoes = ?, "
+                       "intensidade = ?, volume = ?, intensidade_ref = ?, volume_ref = ?, conteudo = ? WHERE id = ?",
+                       (dados["nome"], dados["objetivo"], dados["semanas"], dados["series"], dados["repeticoes"],
+                        dados["intensidade"], dados["volume"], dados["intensidade_ref"], dados["volume_ref"],
+                        dados["conteudo"], fase_id))
+            flash("Fase salva.", "ok")
+            return redirect(url_for("macro_ver", macro_id=macro["id"]) + f"#{fase['modalidade']}")
+    return render_template("fase_form.html", macro=macro, fase=fase, nova=False, c=ciclos)
+
+
+@app.route("/instrutor/fases/<int:fase_id>/excluir", methods=["POST"])
+@login_obrigatorio("instrutor")
+def fase_excluir(user, fase_id):
+    fase = _fase_do_instrutor(fase_id, user["id"])
+    with db.Transacao() as t:
+        t.execute("DELETE FROM fases WHERE id = ?", (fase_id,))
+    with db.Transacao() as t:
+        _renumerar(t, fase["macrociclo_id"], fase["modalidade"])
+    flash(f"Fase “{fase['nome']}” excluída.", "ok")
+    return redirect(url_for("macro_ver", macro_id=fase["macrociclo_id"]) + f"#{fase['modalidade']}")
+
+
+@app.route("/instrutor/fases/<int:fase_id>/mover", methods=["POST"])
+@login_obrigatorio("instrutor")
+def fase_mover(user, fase_id):
+    fase = _fase_do_instrutor(fase_id, user["id"])
+    passo = -1 if request.form.get("direcao") == "acima" else 1
+    vizinha = db.query_one(
+        "SELECT id, ordem FROM fases WHERE macrociclo_id = ? AND modalidade = ? AND ordem = ?",
+        (fase["macrociclo_id"], fase["modalidade"], fase["ordem"] + passo))
+    if vizinha:
+        with db.Transacao() as t:
+            t.execute("UPDATE fases SET ordem = ? WHERE id = ?", (fase["ordem"], vizinha["id"]))
+            t.execute("UPDATE fases SET ordem = ? WHERE id = ?", (vizinha["ordem"], fase_id))
+    return redirect(url_for("macro_ver", macro_id=fase["macrociclo_id"]) + f"#{fase['modalidade']}")
+
+
 # ---------------------------------------------------------------- aluno
+def _macro_vigente(aluno_id, hoje=None):
+    """Macrociclo em andamento; senão o próximo a começar; senão o mais recente."""
+    hoje = hoje or date.today()
+    macros = db.query_all("SELECT * FROM macrociclos WHERE aluno_id = ? ORDER BY data_inicio DESC", (aluno_id,))
+    andamento, futuros = None, []
+    for m in macros:
+        v = ciclos.montar(m, _fases_do_macro(m["id"]), hoje)
+        if v["inicio"] <= hoje <= v["fim"]:
+            andamento = andamento or (m, v)
+        elif v["inicio"] > hoje:
+            futuros.append((m, v))
+    if andamento:
+        return andamento, macros
+    if futuros:
+        return futuros[-1], macros
+    if macros:
+        return (macros[0], ciclos.montar(macros[0], _fases_do_macro(macros[0]["id"]), hoje)), macros
+    return (None, None), macros
+
+
 @app.route("/aluno")
 @login_obrigatorio("aluno")
 def painel_aluno(user):
-    return render_template("painel_aluno.html")
+    (macro, visao), macros = _macro_vigente(user["id"])
+    return render_template("painel_aluno.html", macro=macro, v=visao, macros=macros)
+
+
+@app.route("/aluno/ciclos/<int:macro_id>")
+@login_obrigatorio("aluno")
+def aluno_macro(user, macro_id):
+    macro = db.query_one("SELECT * FROM macrociclos WHERE id = ? AND aluno_id = ?", (macro_id, user["id"]))
+    if not macro:
+        abort(404)
+    visao = ciclos.montar(macro, _fases_do_macro(macro_id))
+    return render_template("macro_ver.html", macro=macro, v=visao, editavel=False)
 
 
 # ---------------------------------------------------------------- erros

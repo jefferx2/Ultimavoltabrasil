@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+{% block titulo %}{{ 'Nova fase' if nova else fase.nome }} · Última Volta Brasil{% endblock %}
+{% block conteudo %}
+<section class="painel painel-estreito">
+  <p class="sobretitulo"><a href="{{ url_for('macro_ver', macro_id=macro.id) }}#{{ fase.modalidade }}">← {{ macro.nome }}</a></p>
+  <h1>{{ 'Nova fase' if nova else fase.nome }}</h1>
+  <p class="sub">{{ MODALIDADES[fase.modalidade] }} · {{ macro.aluno_nome }}</p>
+
+  <form method="post" class="form">
+    <input type="hidden" name="csrf" value="{{ csrf_token }}">
+    <input type="hidden" name="modalidade" value="{{ fase.modalidade }}">
+    <div class="grade">
+      <label class="col-2">Nome da fase *
+        <input name="nome" required value="{{ fase.nome or '' }}">
+      </label>
+      <label class="col-2">Objetivo
+        <input name="objetivo" value="{{ fase.objetivo or '' }}">
+      </label>
+      <label>Duração (semanas) *
+        <input type="number" name="semanas" min="1" max="104" required value="{{ fase.semanas or '' }}">
+      </label>
+      <span></span>
+
+      <label>Intensidade *
+        <select name="intensidade" required>
+          {% for n, rot in NIVEIS.items() %}<option value="{{ n }}" {{ 'selected' if fase.intensidade == n }}>{{ n }} · {{ rot }}</option>{% endfor %}
+        </select>
+      </label>
+      <label>Referência de intensidade
+        <input name="intensidade_ref" value="{{ fase.intensidade_ref or '' }}"
+               placeholder="{{ 'ex.: 60–70% 1RM' if fase.modalidade == 'academia' else 'ex.: Z2–Z3 · 5:00/km' }}">
+      </label>
+      <label>Volume *
+        <select name="volume" required>
+          {% for n, rot in NIVEIS_VOLUME.items() %}<option value="{{ n }}" {{ 'selected' if fase.volume == n }}>{{ n }} · {{ rot }}</option>{% endfor %}
+        </select>
+      </label>
+      <label>Referência de volume
+        <input name="volume_ref" value="{{ fase.volume_ref or '' }}"
+               placeholder="{{ 'ex.: 16–20 séries/grupo/semana' if fase.modalidade == 'academia' else 'ex.: 50–60 km/semana' }}">
+      </label>
+
+      {% if fase.modalidade == 'academia' %}
+      <label>Séries por exercício
+        <input name="series" placeholder="ex.: 3–5" value="{{ fase.series or '' }}">
+      </label>
+      <label>Repetições por série
+        <input name="repeticoes" placeholder="ex.: 8–10" value="{{ fase.repeticoes or '' }}">
+      </label>
+      {% endif %}
+
+      <label class="col-2">Conteúdo / orientações
+        <textarea name="conteudo" rows="3" placeholder="{{ 'ex.: exercícios multiarticulares, cadência controlada' if fase.modalidade == 'academia' else 'ex.: rodagens 50–70 min, 1 longão, 1 fartlek' }}">{{ fase.conteudo or '' }}</textarea>
+      </label>
+    </div>
+    <div class="botoes">
+      <button class="btn" type="submit">{{ 'Adicionar fase' if nova else 'Salvar' }}</button>
+      <a class="link" href="{{ url_for('macro_ver', macro_id=macro.id) }}#{{ fase.modalidade }}">Cancelar</a>
+    </div>
+  </form>
+
+  {% if not nova %}
+  <div class="zona">
+    <div class="zona-linha">
+      <div><b>Excluir fase</b><p>As fases seguintes são puxadas para preencher o lugar.</p></div>
+      <form method="post" action="{{ url_for('fase_excluir', fase_id=fase.id) }}"
+            onsubmit="return confirm('Excluir esta fase?')">
+        <input type="hidden" name="csrf" value="{{ csrf_token }}">
+        <button class="btn btn-contorno" type="submit">Excluir</button>
+      </form>
+    </div>
+  </div>
+  {% endif %}
+</section>
+{% endblock %}

@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block titulo %}{{ macro.nome }} · Última Volta Brasil{% endblock %}
+{% block conteudo %}
+<section class="painel">
+  <p class="sobretitulo">
+    {% if editavel %}<a href="{{ url_for('aluno_editar', aluno_id=macro.aluno_id) }}">← {{ macro.aluno_nome }}</a>
+    {% else %}<a href="{{ url_for('painel_aluno') }}">← Meus treinos</a>{% endif %}
+  </p>
+  <div class="cabecalho">
+    <div>
+      <h1>{{ macro.nome }}</h1>
+      {% if macro.competicao %}<p class="sub">🏁 {{ macro.competicao }}</p>{% endif %}
+    </div>
+    {% if editavel %}<a class="btn btn-contorno" href="{{ url_for('macro_editar', macro_id=macro.id) }}">Editar macrociclo</a>{% endif %}
+  </div>
+  {% if macro.observacoes %}<p class="nota bloco-obs">{{ macro.observacoes }}</p>{% endif %}
+
+  {% include "_ciclo_visual.html" %}
+</section>
+{% endblock %}

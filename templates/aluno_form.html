@@ -41,6 +41,23 @@
   </form>
 
   {% if not novo %}
+  <div class="zona" id="ciclos">
+    <div class="cabecalho">
+      <h2>Macrociclos</h2>
+      <a class="btn btn-peq" href="{{ url_for('macro_novo', aluno_id=aluno.id) }}">+ Novo macrociclo</a>
+    </div>
+    {% if macros %}
+      <ul class="lista-simples">
+        {% for m in macros %}
+          <li><a href="{{ url_for('macro_ver', macro_id=m.id) }}"><b>{{ m.nome }}</b></a>
+            <span>início {{ m.data_inicio | data_br }}{% if m.data_competicao %} · competição {{ m.data_competicao | data_br }}{% endif %}{% if m.competicao %} · {{ m.competicao }}{% endif %}</span></li>
+        {% endfor %}
+      </ul>
+    {% else %}
+      <p class="nota">Nenhum macrociclo ainda.</p>
+    {% endif %}
+  </div>
+
   <div class="zona">
     <h2>Acesso</h2>
     <div class="zona-linha">

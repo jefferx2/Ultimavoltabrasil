@@ -49,6 +49,42 @@ def execute(query, params=()):
         conn.commit()
 
 
+class Transacao:
+    """Várias operações numa única transação (tudo ou nada).
+
+    with db.Transacao() as t:
+        novo_id = t.insert("INSERT INTO ... VALUES (?, ?)", (a, b))
+        t.execute("UPDATE ...", (...))
+    """
+
+    def __enter__(self):
+        self.conn = connect()
+        return self
+
+    def __exit__(self, exc_type, *_):
+        try:
+            if exc_type:
+                self.conn.rollback()
+            else:
+                self.conn.commit()
+        finally:
+            self.conn.close()
+
+    def execute(self, query, params=()):
+        self.conn.execute(_sql(query), params)
+
+    def insert(self, query, params=()):
+        if IS_PG:
+            return self.conn.execute(_sql(query) + " RETURNING id", params).fetchone()["id"]
+        return self.conn.execute(query, params).lastrowid
+
+
+def insert(query, params=()):
+    """INSERT que devolve o id criado."""
+    with Transacao() as t:
+        return t.insert(query, params)
+
+
 SCHEMA_SQLITE = """
 CREATE TABLE IF NOT EXISTS usuarios (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -59,6 +95,35 @@ CREATE TABLE IF NOT EXISTS usuarios (
     ativo INTEGER NOT NULL DEFAULT 1,
     criado_em TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+""" + """
+CREATE TABLE IF NOT EXISTS macrociclos (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    aluno_id INTEGER NOT NULL REFERENCES usuarios(id) ON DELETE CASCADE,
+    nome TEXT NOT NULL,
+    competicao TEXT,
+    data_inicio TEXT NOT NULL,
+    data_competicao TEXT,
+    observacoes TEXT,
+    criado_em TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS fases (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    macrociclo_id INTEGER NOT NULL REFERENCES macrociclos(id) ON DELETE CASCADE,
+    modalidade TEXT NOT NULL CHECK (modalidade IN ('academia', 'corrida')),
+    ordem INTEGER NOT NULL,
+    nome TEXT NOT NULL,
+    objetivo TEXT,
+    semanas INTEGER NOT NULL CHECK (semanas BETWEEN 1 AND 104),
+    series TEXT,
+    repeticoes TEXT,
+    intensidade INTEGER NOT NULL CHECK (intensidade BETWEEN 1 AND 5),
+    volume INTEGER NOT NULL CHECK (volume BETWEEN 1 AND 5),
+    intensidade_ref TEXT,
+    volume_ref TEXT,
+    conteudo TEXT
+);
+CREATE INDEX IF NOT EXISTS ix_macro_aluno ON macrociclos(aluno_id);
+CREATE INDEX IF NOT EXISTS ix_fases_macro ON fases(macrociclo_id, modalidade, ordem);
 """
 
 SCHEMA_PG = """
@@ -71,14 +136,46 @@ CREATE TABLE IF NOT EXISTS usuarios (
     ativo INTEGER NOT NULL DEFAULT 1,
     criado_em TIMESTAMPTZ NOT NULL DEFAULT now()
 );
--- O app acessa direto pelo Postgres; a API pública do Supabase fica bloqueada.
-ALTER TABLE usuarios ENABLE ROW LEVEL SECURITY;
+CREATE TABLE IF NOT EXISTS macrociclos (
+    id SERIAL PRIMARY KEY,
+    aluno_id INTEGER NOT NULL REFERENCES usuarios(id) ON DELETE CASCADE,
+    nome TEXT NOT NULL,
+    competicao TEXT,
+    data_inicio TEXT NOT NULL,
+    data_competicao TEXT,
+    observacoes TEXT,
+    criado_em TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE TABLE IF NOT EXISTS fases (
+    id SERIAL PRIMARY KEY,
+    macrociclo_id INTEGER NOT NULL REFERENCES macrociclos(id) ON DELETE CASCADE,
+    modalidade TEXT NOT NULL CHECK (modalidade IN ('academia', 'corrida')),
+    ordem INTEGER NOT NULL,
+    nome TEXT NOT NULL,
+    objetivo TEXT,
+    semanas INTEGER NOT NULL CHECK (semanas BETWEEN 1 AND 104),
+    series TEXT,
+    repeticoes TEXT,
+    intensidade INTEGER NOT NULL CHECK (intensidade BETWEEN 1 AND 5),
+    volume INTEGER NOT NULL CHECK (volume BETWEEN 1 AND 5),
+    intensidade_ref TEXT,
+    volume_ref TEXT,
+    conteudo TEXT
+);
+CREATE INDEX IF NOT EXISTS ix_macro_aluno ON macrociclos(aluno_id);
+CREATE INDEX IF NOT EXISTS ix_fases_macro ON fases(macrociclo_id, modalidade, ordem);
+"""
+
+TABELAS = ("usuarios", "macrociclos", "fases")
+
+# O app acessa direto pelo Postgres; a API pública do Supabase fica bloqueada.
+RLS_PG = "".join(f"""
+ALTER TABLE {t} ENABLE ROW LEVEL SECURITY;
 DO $$ BEGIN
   IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'anon') THEN
-    REVOKE ALL ON usuarios FROM anon, authenticated;
+    REVOKE ALL ON {t} FROM anon, authenticated;
   END IF;
-END $$;
-"""
+END $$;""" for t in TABELAS)
 
 
 # Colunas acrescentadas depois da criação da tabela (aplicadas em bancos já existentes).
@@ -105,7 +202,10 @@ def _colunas_existentes(conn, tabela):
 def init_db():
     with connect() as conn:
         if IS_PG:
+            # Trava: os workers do gunicorn sobem juntos; só um cria/altera tabelas por vez.
+            conn.execute("SELECT pg_advisory_xact_lock(7701)")
             conn.execute(SCHEMA_PG)
+            conn.execute(RLS_PG)
         else:
             conn.executescript(SCHEMA_SQLITE)
         existentes = _colunas_existentes(conn, "usuarios")

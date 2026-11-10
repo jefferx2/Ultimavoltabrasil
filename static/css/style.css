@@ -175,3 +175,95 @@ h1, h2, .marca span, .sobretitulo {
   .topo nav .link:not(.link-sec) { display: none; }
   .zona-linha { flex-direction: column; align-items: flex-start; }
 }
+
+/* ---- etapa 2b: macrociclo ---- */
+.btn-peq { padding: 5px 14px; font-size: .85rem; }
+.nota { color: var(--cinza); font-size: .9rem; margin-top: 6px; }
+.bloco-obs { background: var(--claro); padding: 10px 14px; border-radius: 6px; margin-bottom: 8px; }
+.bloco { margin-top: 34px; }
+.bloco h2 { font-size: 1.5rem; margin-bottom: 12px; }
+.bloco .cabecalho { margin-bottom: 10px; }
+.bloco .cabecalho h2 { margin-bottom: 0; }
+.alerta-aviso { background: #fff4d6; color: #7a5200; margin-bottom: 12px; }
+.mudo { color: var(--cinza); }
+.inline { display: inline; }
+.check { display: flex !important; gap: 8px; align-items: flex-start; font-weight: 500 !important; }
+.check input { margin-top: 3px; }
+.caixa-opcoes { border: 1px solid var(--borda); border-radius: 6px; padding: 12px 16px 14px; display: grid; gap: 10px; }
+.caixa-opcoes legend { font-weight: 600; font-size: .9rem; padding: 0 6px; }
+.lista-simples { list-style: none; padding: 0; margin: 0; }
+.lista-simples li { padding: 12px 0; border-bottom: 1px solid var(--borda); display: grid; gap: 2px; }
+.lista-simples a { color: var(--preto); text-decoration: none; }
+.lista-simples a:hover { color: var(--vermelho); }
+.lista-simples span { color: var(--cinza); font-size: .9rem; }
+.zona .cabecalho { margin-bottom: 4px; }
+
+/* agora */
+.agora { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 14px; margin-top: 18px; }
+.agora-card { --cor: var(--borda); border: 1px solid var(--borda); border-left: 6px solid var(--cor); border-radius: 6px; padding: 14px 16px; display: grid; gap: 3px; }
+.agora-card b { font-size: 1.05rem; }
+.agora-card span:last-child { color: var(--cinza); font-size: .9rem; }
+.agora-mod { font: 600 .75rem "Barlow", sans-serif; text-transform: uppercase; letter-spacing: .08em; color: var(--cinza); }
+.agora-comp { --cor: var(--preto); background: var(--claro); }
+
+/* linha do tempo */
+.timeline { --tl-rot: 92px; position: relative; padding-top: 22px; }
+.tl-meses { position: absolute; top: 0; left: var(--tl-rot); right: 0; height: 18px; }
+.tl-meses span { position: absolute; font-size: .75rem; color: var(--cinza); border-left: 1px solid var(--borda); padding-left: 4px; height: 100%; }
+.tl-linha { display: grid; grid-template-columns: var(--tl-rot) 1fr; align-items: center; margin-bottom: 8px; }
+.tl-rotulo { font-weight: 600; font-size: .9rem; }
+.tl-trilho { position: relative; height: 38px; background: var(--claro); border-radius: 4px; }
+.tl-fase { position: absolute; top: 0; bottom: 0; border-right: 2px solid #fff; color: #fff; text-decoration: none; display: flex; align-items: center; padding: 0 8px; overflow: hidden; }
+.tl-fase:first-child { border-radius: 4px 0 0 4px; }
+.tl-fase:last-child { border-radius: 0 4px 4px 0; border-right: 0; }
+.tl-fase span { font-size: .78rem; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tl-fase:hover { filter: brightness(1.1); }
+.tl-vazio { position: absolute; inset: 0; display: flex; align-items: center; padding-left: 10px; color: var(--cinza); font-size: .85rem; }
+.tl-hoje, .tl-comp { position: absolute; top: 18px; bottom: -4px; width: 0; border-left: 2px solid var(--preto); pointer-events: none; }
+.tl-comp { border-left: 2px dashed var(--vermelho); }
+.tl-hoje span, .tl-comp span { position: absolute; bottom: -20px; transform: translateX(-50%); font-size: .72rem; font-weight: 700; white-space: nowrap; background: #fff; padding: 0 4px; }
+.tl-comp span { color: var(--vermelho); bottom: auto; top: -20px; }
+.timeline + .nota { margin-top: 24px; }
+
+/* gráfico */
+.grafico { margin: 6px 0 14px; border: 1px solid var(--borda); border-radius: 6px; padding: 10px 10px 8px; }
+.grafico svg { width: 100%; height: auto; display: block; }
+.g-grade { stroke: #eee; }
+.g-div { stroke: #ccc; stroke-dasharray: 3 3; }
+.g-eixo { font: 11px "Barlow", sans-serif; fill: var(--cinza); }
+.g-fase { font: 700 12px "Barlow", sans-serif; fill: var(--cinza); }
+.g-volume { fill: none; stroke: var(--preto); stroke-width: 3; }
+.g-intens { fill: none; stroke: var(--vermelho); stroke-width: 3; }
+.g-pt-volume { fill: #fff; stroke: var(--preto); stroke-width: 2; }
+.g-pt-intens { fill: #fff; stroke: var(--vermelho); stroke-width: 2; }
+.grafico figcaption { display: flex; gap: 18px; flex-wrap: wrap; font-size: .85rem; margin-top: 4px; padding-left: 30px; }
+.leg::before { content: ""; display: inline-block; width: 18px; height: 3px; vertical-align: middle; margin-right: 6px; }
+.leg-volume::before { background: var(--preto); }
+.leg-intens::before { background: var(--vermelho); }
+.leg-nota { color: var(--cinza); }
+
+/* tabela das fases */
+.tabela-fases th, .tabela-fases td { vertical-align: top; }
+.tabela-fases thead th { text-align: center; font-size: .8rem; color: var(--preto); background: #fff; }
+.tabela-fases thead th:first-child { text-align: left; color: var(--cinza); }
+.tabela-fases tbody th { text-align: left; white-space: nowrap; background: var(--claro); color: var(--cinza); font: 600 .78rem "Barlow", sans-serif; text-transform: uppercase; letter-spacing: .04em; padding: 12px 14px; border-top: 1px solid var(--borda); width: 1%; }
+.tabela-fases td { text-align: center; min-width: 120px; }
+.tabela-fases td small { display: block; color: var(--cinza); font-size: .8rem; margin-top: 3px; }
+.tabela-fases td.texto { text-align: left; font-size: .85rem; color: #444; }
+.nivel { display: inline-block; font-size: .8rem; font-weight: 600; padding: 2px 9px; border-radius: 99px; }
+.nivel.n1 { background: #eef1f4; color: #55606e; }
+.nivel.n2 { background: #e3eef6; color: #2c5f80; }
+.nivel.n3 { background: #fff1cc; color: #7a5600; }
+.nivel.n4 { background: #fde2d4; color: #a3461a; }
+.nivel.n5 { background: #fbd5d7; color: var(--vermelho-esc); }
+.linha-acoes td { white-space: nowrap; }
+.linha-acoes .link { color: var(--vermelho); margin-right: 6px; }
+.linha-acoes button { border: 1px solid var(--borda); background: #fff; border-radius: 4px; cursor: pointer; padding: 2px 7px; font-size: .75rem; color: var(--cinza); }
+.linha-acoes button:hover { border-color: var(--vermelho); color: var(--vermelho); }
+
+@media (max-width: 640px) {
+  .timeline { --tl-rot: 70px; }
+  .tl-fase span { display: none; }
+}
+.tl-dir span { transform: translateX(-100%); }
+.tl-hoje.tl-dir span, .tl-comp.tl-dir span { padding-right: 6px; }
