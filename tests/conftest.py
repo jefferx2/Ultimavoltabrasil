@@ -12,6 +12,6 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 if os.environ.get("DATABASE_URL", "").startswith("postgres"):
     import psycopg
     with psycopg.connect(os.environ["DATABASE_URL"], autocommit=True) as c:
-        c.execute("DROP TABLE IF EXISTS avaliacoes, treino_academia, treino_corrida, treinos, fases, macrociclos, usuarios CASCADE")
+        c.execute("DROP TABLE IF EXISTS registro_series, registro_corrida, registros, avaliacoes, treino_academia, treino_corrida, treinos, fases, macrociclos, usuarios CASCADE")
 else:
     os.environ["SQLITE_PATH"] = os.path.join(tempfile.mkdtemp(), "teste.db")

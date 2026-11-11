@@ -114,6 +114,13 @@
         {% endfor %}
       </g>
       {% endfor %}
+      {% if g.real_pts %}
+      <g class="camada" data-camada="real-vol">
+        <path d="{{ g.real_path }}" class="g-real"/>
+        {% for pt in g.real_pts %}<circle cx="{{ '%.1f' % pt.x }}" cy="{{ '%.1f' % pt.y }}" r="3.5" class="g-real-pt">
+          <title>Semana {{ pt.semana }} · volume realizado: nível {{ ('%.1f' % pt.nivel) | replace('.', ',') }} ({{ (pl.realizado_bruto[pt.semana] * 1000) | km if mod == 'corrida' else pl.realizado_bruto[pt.semana] ~ ' séries' }})</title></circle>{% endfor %}
+      </g>
+      {% endif %}
     </svg>
     <figcaption>
       <span class="leg-grupo">Metodologia</span>
@@ -123,6 +130,10 @@
       <span class="leg-grupo">Planejado (treinos)</span>
       <label class="leg"><input type="checkbox" data-alterna="plan-vol" checked><i class="leg-plan-vol"></i>Volume</label>
       <label class="leg"><input type="checkbox" data-alterna="plan-int" checked><i class="leg-plan-int"></i>Intensidade</label>
+      {% endif %}
+      {% if g.real_pts %}
+      <span class="leg-grupo">Realizado (registros)</span>
+      <label class="leg"><input type="checkbox" data-alterna="real-vol" checked><i class="leg-real"></i>Volume</label>
       {% endif %}
     </figcaption>
     {% if pl %}

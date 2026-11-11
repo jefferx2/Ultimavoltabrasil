@@ -1,0 +1,225 @@
+{% extends "base.html" %}
+{% block titulo %}{{ 'Registrar treino' if editavel else 'Registro do treino' }} · Última Volta Brasil{% endblock %}
+{% block conteudo %}
+{% set corrida = treino.modalidade == 'corrida' %}
+{% set f = reg.form if reg and reg.form else none %}
+{% set salvo = reg if reg and not reg.form else none %}
+{% macro v(nome, padrao='') -%}{{ f.get(nome, '') if f else padrao }}{%- endmacro %}
+
+<section class="painel painel-medio">
+  <p class="sobretitulo">
+    {% if editavel %}<a href="{{ url_for('aluno_semana', macro_id=macro.id, n=semana_n) }}#d{{ treino.data }}">← Semana {{ semana_n }}</a>
+    {% else %}<a href="{{ url_for('acompanhamento_aluno', aluno_id=aluno.id) }}">← Acompanhamento de {{ aluno.nome }}</a>{% endif %}
+  </p>
+  <h1>{{ 'Registrar treino' if editavel else 'Registro do treino' }}</h1>
+  <p class="sub">{{ dia_nome }}, {{ treino.data | data_br }} · {{ MODALIDADES[treino.modalidade] }}{% if treino.titulo %} · <b>{{ treino.titulo }}</b>{% endif %}{% if not editavel %} · {{ aluno.nome }}{% endif %}</p>
+  {% if treino.observacoes %}<p class="nota bloco-obs">{{ treino.observacoes }}</p>{% endif %}
+
+  {% if not editavel and not salvo %}
+    <div class="vazio"><p>O aluno ainda não registrou este treino.</p></div>
+  {% else %}
+  <form method="post" class="form form-registro" id="form-registro">
+    <input type="hidden" name="csrf" value="{{ csrf_token }}">
+    <fieldset class="status-reg" {{ 'disabled' if not editavel }}>
+      <legend>Como foi?</legend>
+      {% set st = v('status', salvo.status if salvo else 'feito') %}
+      {% for k, rot in STATUS.items() %}
+        <label class="opcao"><input type="radio" name="status" value="{{ k }}" {{ 'checked' if st == k }}> {{ rot }}</label>
+      {% endfor %}
+    </fieldset>
+
+    <div id="detalhes">
+    {% if corrida %}
+      <h2 class="sec">Blocos</h2>
+      {% for it in treino['itens'] %}
+        {% set l = salvo.corrida.get(it.id) if salvo else none %}
+        {% set reps = it.repeticoes or 1 %}
+        <div class="reg-bloco" data-bloco data-reps="{{ reps }}" data-alvo="{{ (it.pace and (it.pace | pace_s)) or (perfil.zonas_js.get(it.zona) if it.zona else '') }}">
+          <div class="reg-presc">
+            {% if it.zona %}<span class="zbadge z-{{ it.zona }}">{{ it.zona }}</span>{% endif %}
+            <b>{{ it.tipo }}</b>
+            {% if reps > 1 %}{{ reps }}×{% endif %}
+            {% if it.distancia_m %}{{ fmt_dist(it.distancia_m) }}{% endif %}
+            {% if it.duracao %}{{ it.duracao }}{% endif %}
+            {% if it.pace %}<span class="pace">@ {{ it.pace }}</span>{% endif %}
+            {% if it.recuperacao %}<span class="rec">· rec. {{ it.recuperacao }}</span>{% endif %}
+          </div>
+          <div class="reg-campos">
+            {% if reps > 1 %}
+              {% set n_tempos = (l.tempos | length) if l and l.tempos else 0 %}
+              <label>Distância de cada repetição
+                <input name="dist_{{ it.id }}" value="{{ v('dist_' ~ it.id, fmt_dist(((l.distancia_m / n_tempos) | round | int) if l and l.distancia_m and n_tempos else it.distancia_m)) }}" {{ 'disabled' if not editavel }}>
+              </label>
+              <label class="larga">Tempo de cada repetição
+                <input name="tempos_{{ it.id }}" placeholder="{{ 'ex.: 72 71 70 69' if (it.distancia_m or 1000) < 1000 else 'ex.: 3:52 3:50 3:49' }}"
+                       value="{{ v('tempos_' ~ it.id, (l.tempos | map('tempo') | join(' ')) if l and l.tempos else '') }}" {{ 'disabled' if not editavel }}>
+              </label>
+            {% else %}
+              <label>Distância
+                <input name="dist_{{ it.id }}" value="{{ v('dist_' ~ it.id, fmt_dist(l.distancia_m) if l else fmt_dist(it.distancia_m)) }}" {{ 'disabled' if not editavel }}>
+              </label>
+              <label>Tempo
+                <input name="tempo_{{ it.id }}" placeholder="ex.: 42:30" value="{{ v('tempo_' ~ it.id, (l.tempo_s | tempo) if l and l.tempo_s else '') }}" {{ 'disabled' if not editavel }}>
+              </label>
+            {% endif %}
+            <output class="reg-ritmo" data-ritmo></output>
+          </div>
+        </div>
+      {% endfor %}
+      <p class="nota">Tempos das repetições: separe por espaço (72 71 70 ou 1:12 1:11). Número sozinho conta como segundos. Deixe em branco o bloco que não fez.</p>
+    {% else %}
+      <h2 class="sec">Exercícios</h2>
+      {% for it in treino['itens'] %}
+        {% set feitas = salvo.series.get(it.id, []) if salvo else [] %}
+        {% set ult = ultimas.get(it.exercicio | trim | lower) %}
+        <div class="reg-exercicio">
+          <div class="reg-presc">
+            <b>{{ it.exercicio }}</b> · {{ it.series }} × {{ it.repeticoes or '—' }}
+            {% if it.carga %}<span class="rec">· sugerido {{ it.carga }}</span>{% endif %}
+            {% if it.descanso %}<span class="rec">· ⏱ {{ it.descanso }}</span>{% endif %}
+            {% if ult %}<span class="ultima">Última vez: {{ ult[0] | numero }} kg{% if ult[1] %} × {{ ult[1] }}{% endif %} ({{ ult[2] | data_curta }})</span>{% endif %}
+          </div>
+          {% if editavel %}<button type="button" class="btn btn-contorno btn-peq usar-sugestao" data-usar>Usar a sugestão em todas as séries</button>{% endif %}
+          <table class="series">
+            <tr><th>Série</th><th>Carga (kg)</th><th>Repetições</th></tr>
+            {% for k in range(1, it.series + 1) %}
+              {% set s = (feitas | selectattr('serie', 'equalto', k) | first) if feitas else none %}
+              <tr>
+                <td>{{ k }}</td>
+                <td><input name="carga_{{ it.id }}_{{ k }}" inputmode="decimal" placeholder="{{ (ult[0] | numero) if ult else '' }}"
+                           value="{{ v('carga_' ~ it.id ~ '_' ~ k, (s.carga_kg | numero) if s else '') }}" {{ 'disabled' if not editavel }}></td>
+                <td><input name="reps_{{ it.id }}_{{ k }}" inputmode="numeric" placeholder="{{ it.repeticoes | primeiro_num }}"
+                           value="{{ v('reps_' ~ it.id ~ '_' ~ k, s.reps if s and s.reps is not none else '') }}" {{ 'disabled' if not editavel }}></td>
+              </tr>
+            {% endfor %}
+          </table>
+        </div>
+      {% endfor %}
+      {% if editavel %}<p class="nota">Preencha a carga que realmente usou e as repetições que conseguiu em cada série.</p>{% endif %}
+    {% endif %}
+    </div>
+
+    <div class="grade grade-3 reg-geral">
+      <label>Esforço da sessão (1 a 10)
+        <select name="rpe" {{ 'disabled' if not editavel }}>
+          {% set rpe = v('rpe', salvo.rpe if salvo and salvo.rpe else '') | string %}
+          <option value="">—</option>
+          {% for n, rot in ESFORCO.items() %}<option value="{{ n }}" {{ 'selected' if rpe == n | string }}>{{ n }} · {{ rot }}</option>{% endfor %}
+        </select>
+      </label>
+      <label>Duração total (min)
+        <input name="duracao_min" type="number" min="1" max="600" placeholder="aquecimento ao fim"
+               value="{{ v('duracao_min', salvo.duracao_min if salvo and salvo.duracao_min else '') }}" {{ 'disabled' if not editavel }}>
+      </label>
+      <label>Data em que fez
+        <input name="data_realizada" type="date" max="{{ hoje_iso() }}" value="{{ v('data_realizada', (salvo.data_realizada if salvo and salvo.data_realizada else treino.data)) }}" {{ 'disabled' if not editavel }}>
+      </label>
+    </div>
+    <label class="bloco-campo">Como se sentiu? Algo a comentar com o professor?
+      <textarea name="comentario" rows="3" {{ 'disabled' if not editavel }}>{{ v('comentario', salvo.comentario if salvo and salvo.comentario else '') }}</textarea>
+    </label>
+
+    {% if editavel %}
+    <div class="botoes">
+      <button class="btn" type="submit">Salvar registro</button>
+      <a class="link" href="{{ url_for('aluno_semana', macro_id=macro.id, n=semana_n) }}#d{{ treino.data }}">Cancelar</a>
+    </div>
+    {% endif %}
+  </form>
+
+  {% if salvo and real %}
+  <div class="zona">
+    <h2>Prescrito × realizado</h2>
+    <div class="tabela-wrap">
+      <table class="tabela">
+        {% if corrida %}
+          <tr><th></th><th>Distância</th><th>Tempo</th></tr>
+          <tr><td>Prescrito</td><td>{{ vol.metros | km }}</td><td>{{ (vol.segundos | duracao) or '—' }}</td></tr>
+          <tr><td>Realizado</td><td><b>{{ real.metros | km }}</b></td><td><b>{{ (real.segundos | duracao) or '—' }}</b></td></tr>
+        {% else %}
+          <tr><th></th><th>Séries</th><th>Repetições</th><th>Tonelagem</th></tr>
+          <tr><td>Prescrito</td><td>{{ vol.series }}</td><td>{{ vol.reps or '—' }}</td><td>{{ (vol.kg | kg) if vol.kg else '—' }}</td></tr>
+          <tr><td>Realizado</td><td><b>{{ real.series }}</b></td><td><b>{{ real.reps }}</b></td><td><b>{{ (real.kg | kg) if real.kg else '—' }}</b></td></tr>
+        {% endif %}
+      </table>
+    </div>
+    {% if comparacao %}
+    <h3 class="sec-peq">Ritmo por bloco</h3>
+    <div class="tabela-wrap">
+      <table class="tabela">
+        <tr><th>Bloco</th><th>Realizado</th><th>Alvo</th><th>Diferença</th><th>Repetições</th></tr>
+        {% for c in comparacao %}
+        <tr>
+          <td><span class="zbadge z-{{ c.zona }}">{{ c.zona }}</span> {{ c.item.tipo }}</td>
+          <td><b>{{ c.real | pace }}</b></td>
+          <td>{{ (c.alvo | pace) if c.alvo else '—' }}</td>
+          <td>{% if c.dif is not none %}<span class="{{ 'dif-ok' if c.dif | abs <= 5 else ('dif-rapido' if c.dif < 0 else 'dif-lento') }}">{{ '%+d' % c.dif }} s/km</span>{% else %}—{% endif %}</td>
+          <td>{{ c.tempos | map('tempo') | join(' · ') if c.tempos else '' }}</td>
+        </tr>
+        {% endfor %}
+      </table>
+    </div>
+    <p class="nota">Diferença: negativo = mais rápido que o alvo. Até 5 s/km conta como dentro do ritmo.</p>
+    {% endif %}
+    {% if real.carga_interna %}<p class="nota">Carga interna da sessão: <b>{{ real.carga_interna }}</b> (esforço × minutos).</p>{% endif %}
+  </div>
+  {% endif %}
+  {% endif %}
+</section>
+
+{% if editavel and corrida %}
+<script>
+(function () {
+  const dur = t => {   // mesmas regras do servidor (simplificado): m:ss, h:mm:ss ou número = segundos
+    t = (t || '').trim().toLowerCase().replace(',', '.');
+    let m = t.match(/^(\d+):(\d{1,2})(?::(\d{1,2}))?$/);
+    if (m) return m[3] !== undefined ? +m[1] * 3600 + +m[2] * 60 + +m[3] : +m[1] * 60 + +m[2];
+    m = t.match(/^(\d+(?:\.\d+)?)s?$/); return m ? parseFloat(m[1]) : null;
+  };
+  const durTotal = t => {  // tempo total: número sozinho = minutos
+    t = (t || '').trim().toLowerCase(); const m = t.match(/^(\d+(?:[.,]\d+)?)$/);
+    return m ? parseFloat(m[1].replace(',', '.')) * 60 : dur(t);
+  };
+  const dist = t => {
+    t = (t || '').trim().toLowerCase().replace(/\s/g, '').replace(',', '.');
+    const m = t.match(/^(\d+(?:\.\d+)?)(km|k|m)?$/); if (!m) return null;
+    let v = parseFloat(m[1]); if (m[2] === 'km' || m[2] === 'k' || (!m[2] && v < 50)) v *= 1000; return v;
+  };
+  const fmt = s => { s = Math.round(s); return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0') + '/km'; };
+  function atualizar(b) {
+    const reps = +b.dataset.reps, alvo = +b.dataset.alvo || null, out = b.querySelector('[data-ritmo]');
+    const d = dist(b.querySelector('[name^="dist_"]').value);
+    let seg = null, n = 1;
+    if (reps > 1) {
+      const ts = (b.querySelector('[name^="tempos_"]').value || '').split(/[\s,;]+/).filter(Boolean).map(dur);
+      if (ts.length && ts.every(x => x)) { seg = ts.reduce((a, x) => a + x, 0); n = ts.length; }
+    } else { seg = durTotal(b.querySelector('[name^="tempo_"]').value); }
+    if (!d || !seg) { out.textContent = ''; out.className = 'reg-ritmo'; return; }
+    const ritmo = seg / (d * n / 1000);
+    let txt = 'Ritmo ' + fmt(ritmo) + (n > 1 ? ' (média de ' + n + ')' : '');
+    let cls = 'reg-ritmo';
+    if (alvo) { const dif = Math.round(ritmo - alvo); txt += ' · alvo ' + fmt(alvo) + ' (' + (dif > 0 ? '+' : '') + dif + ' s)';
+                cls += Math.abs(dif) <= 5 ? ' dif-ok' : (dif < 0 ? ' dif-rapido' : ' dif-lento'); }
+    out.textContent = txt; out.className = cls;
+  }
+  document.querySelectorAll('[data-bloco]').forEach(b => { b.addEventListener('input', () => atualizar(b)); atualizar(b); });
+})();
+</script>
+{% endif %}
+{% if editavel and not corrida %}
+<script>
+document.querySelectorAll('[data-usar]').forEach(b => b.addEventListener('click', () => {
+  b.closest('.reg-exercicio').querySelectorAll('input').forEach(i => { if (!i.value && i.placeholder) i.value = i.placeholder; });
+}));
+</script>
+{% endif %}
+{% if editavel %}
+<script>
+(function () {
+  const det = document.getElementById('detalhes');
+  const troca = () => { const nao = document.querySelector('[name=status]:checked')?.value === 'nao_feito'; det.hidden = nao; };
+  document.querySelectorAll('[name=status]').forEach(r => r.addEventListener('change', troca)); troca();
+})();
+</script>
+{% endif %}
+{% endblock %}

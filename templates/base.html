@@ -21,8 +21,11 @@
         {% if usuario.perfil == 'instrutor' and not usuario.trocar_senha %}
           <a class="link" href="{{ url_for('painel_instrutor') }}">Painel</a>
           <a class="link" href="{{ url_for('alunos') }}">Alunos</a>
+          <a class="link" href="{{ url_for('acompanhamento') }}">Acompanhamento</a>
+          {% if usuario.admin %}<a class="link" href="{{ url_for('professores') }}">Professores</a>{% endif %}
         {% elif not usuario.trocar_senha %}
           <a class="link" href="{{ url_for('painel_aluno') }}">Meus treinos</a>
+          <a class="link" href="{{ url_for('aluno_acompanhamento') }}">Minha evolução</a>
         {% endif %}
         <a class="link link-sec" href="{{ url_for('trocar_senha') }}" title="Trocar senha">{{ usuario.nome.split()[0] }}</a>
         <a class="btn btn-contorno" href="{{ url_for('sair') }}">Sair</a>

@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% block titulo %}Acompanhamento · Última Volta Brasil{% endblock %}
+{% block conteudo %}
+<section class="painel">
+  <p class="sobretitulo">Área do professor</p>
+  <h1>Acompanhamento</h1>
+  <p class="sub">Últimos 7 dias de cada aluno ativo. Os alunos com alerta aparecem primeiro.</p>
+  {% if linhas %}
+  <div class="tabela-wrap">
+    <table class="tabela tabela-acomp">
+      <thead><tr><th>Aluno</th><th>Treinos feitos</th><th>Corrida (km)</th><th>Academia (séries)</th><th>Esforço médio</th><th>Último registro</th><th>Alertas</th></tr></thead>
+      <tbody>
+        {% for l in linhas %}{% set r = l.r7 %}
+        <tr>
+          <td><a href="{{ url_for('acompanhamento_aluno', aluno_id=l.aluno.id) }}"><b>{{ l.aluno.nome }}</b></a></td>
+          {% if not l.tem_treino %}
+            <td colspan="5" class="mudo">Sem treinos montados nas últimas semanas.</td><td></td>
+          {% else %}
+          <td>{% if r.planejadas %}<b>{{ r.feitas }}</b> de {{ r.planejadas }}
+                <div class="barrinha"><span style="width: {{ r.adesao }}%"></span></div>{% else %}<span class="mudo">—</span>{% endif %}</td>
+          <td>{% if r.km_plan or r.km_real %}<b>{{ (r.km_real * 1000) | km }}</b> <small class="mudo">de {{ (r.km_plan * 1000) | km }}</small>{% else %}<span class="mudo">—</span>{% endif %}</td>
+          <td>{% if r.series_plan or r.series_real %}<b>{{ r.series_real }}</b> <small class="mudo">de {{ r.series_plan }}</small>{% else %}<span class="mudo">—</span>{% endif %}</td>
+          <td>{{ (r.rpe_medio | numero) if r.rpe_medio else '—' }}</td>
+          <td>{{ (r.ultimo | data_curta) if r.ultimo else '—' }}</td>
+          <td>{% for a in l.alertas %}<span class="alerta-fase">▲ {{ a }}</span><br>{% else %}<span class="lim-ok">✓</span>{% endfor %}</td>
+          {% endif %}
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+    <div class="vazio"><p>Nenhum aluno ativo.</p><a class="btn" href="{{ url_for('aluno_novo') }}">Cadastrar aluno</a></div>
+  {% endif %}
+  <p class="nota">Treinos feitos: registrados como feitos ou feitos em parte, entre os que já deveriam ter acontecido. Esforço: escala de 1 a 10 informada pelo aluno.</p>
+</section>
+{% endblock %}

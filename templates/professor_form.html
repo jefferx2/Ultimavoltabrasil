@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+{% block titulo %}{{ 'Novo professor' if novo else prof.nome }} · Última Volta Brasil{% endblock %}
+{% block conteudo %}
+<section class="painel painel-estreito">
+  <p class="sobretitulo"><a href="{{ url_for('professores') }}">← Professores</a></p>
+  <h1>{{ 'Novo professor' if novo else prof.nome }}</h1>
+  <form method="post" class="form">
+    <input type="hidden" name="csrf" value="{{ csrf_token }}">
+    <div class="grade">
+      <label class="col-2">Nome completo *<input name="nome" required value="{{ prof.nome or '' }}"></label>
+      <label class="col-2">E-mail (será o login) *<input type="email" name="email" required value="{{ prof.email or '' }}"></label>
+      <label class="col-2">Telefone / WhatsApp<input name="telefone" value="{{ prof.telefone or '' }}"></label>
+      <label class="col-2 check"><input type="checkbox" name="admin" value="1" {{ 'checked' if prof.admin }}>
+        Administrador: também pode cadastrar e gerenciar professores</label>
+      {% if novo %}
+      <label class="col-2">Senha inicial
+        <input name="senha" minlength="{{ senha_min }}" placeholder="Deixe em branco para gerar automaticamente">
+        <small>O professor será obrigado a trocar no primeiro acesso.</small>
+      </label>
+      {% endif %}
+    </div>
+    <div class="botoes">
+      <button class="btn" type="submit">{{ 'Cadastrar professor' if novo else 'Salvar' }}</button>
+      <a class="link" href="{{ url_for('professores') }}">Cancelar</a>
+    </div>
+  </form>
+
+  {% if not novo %}
+  <div class="zona">
+    <h2>Alunos ({{ alunos | length }})</h2>
+    {% if alunos %}
+      <p class="nota">{% for a in alunos %}{{ a.nome }}{{ ' (inativo)' if not a.ativo }}{{ ', ' if not loop.last }}{% endfor %}</p>
+      {% if not eu %}
+      <div class="zona-linha">
+        <div><b>Transferir alunos</b><p>Passa todos os alunos deste professor, com ciclos e histórico, para outro professor.</p></div>
+        <form method="post" action="{{ url_for('professor_transferir', prof_id=prof.id) }}" class="form-linha"
+              onsubmit="return confirm('Transferir todos os alunos deste professor?')">
+          <input type="hidden" name="csrf" value="{{ csrf_token }}">
+          <select name="destino" required>
+            <option value="">Escolha…</option>
+            {% for p in outros_professores(prof.id) %}<option value="{{ p.id }}">{{ p.nome }}</option>{% endfor %}
+          </select>
+          <button class="btn btn-contorno btn-peq" type="submit">Transferir</button>
+        </form>
+      </div>
+      {% endif %}
+    {% else %}<p class="nota">Nenhum aluno.</p>{% endif %}
+  </div>
+
+  {% if not eu %}
+  <div class="zona">
+    <h2>Acesso</h2>
+    <div class="zona-linha">
+      <div><b>Redefinir senha</b><p>Gera uma senha nova; o professor troca no próximo acesso.</p></div>
+      <form method="post" action="{{ url_for('professor_redefinir_senha', prof_id=prof.id) }}"
+            onsubmit="return confirm('Gerar uma nova senha para este professor? A senha atual deixa de funcionar.')">
+        <input type="hidden" name="csrf" value="{{ csrf_token }}">
+        <button class="btn btn-contorno" type="submit">Redefinir senha</button>
+      </form>
+    </div>
+    <div class="zona-linha">
+      <div><b>{{ 'Desativar' if prof.ativo else 'Reativar' }} professor</b>
+        <p>{{ 'O professor não consegue mais entrar. Os alunos dele continuam com acesso; transfira-os se for o caso.' if prof.ativo else 'O professor volta a conseguir entrar.' }}</p></div>
+      <form method="post" action="{{ url_for('professor_status', prof_id=prof.id) }}">
+        <input type="hidden" name="csrf" value="{{ csrf_token }}">
+        <button class="btn btn-contorno" type="submit">{{ 'Desativar' if prof.ativo else 'Reativar' }}</button>
+      </form>
+    </div>
+  </div>
+  {% endif %}
+  {% endif %}
+</section>
+{% endblock %}

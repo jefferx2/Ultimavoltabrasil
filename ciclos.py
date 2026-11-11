@@ -150,7 +150,7 @@ def grafico(fases, total_semanas, inicio=None, plan=None, acima=None,
     w, h = largura - esq - dir_, altura - topo - base
     plan = plan or {"volume": {}, "intensidade": {}}
     acima = acima or {"volume": set(), "intensidade": set()}
-    maior = max([v for c in ("volume", "intensidade") for v in plan[c].values()] + [5])
+    maior = max([v for c in ("volume", "intensidade", "realizado") for v in plan.get(c, {}).values()] + [5])
     ymax = min(8, max(5, math.ceil(maior)))
 
     def y(nivel):
@@ -199,6 +199,15 @@ def grafico(fases, total_semanas, inicio=None, plan=None, acima=None,
             anterior = pt["semana"]
         plan_path[campo] = d.strip()
 
+    # realizado (registros dos alunos): volume por semana
+    real = plan.get("realizado", {})
+    real_pts = [{"x": x_sem(s_ - 0.5), "y": y(real[s_]), "semana": s_, "nivel": real[s_]}
+                for s_ in sorted(real) if 1 <= s_ <= total_semanas]
+    real_path, anterior = "", None
+    for pt in real_pts:
+        real_path += (" L" if anterior is not None and pt["semana"] == anterior + 1 else " M") + f"{pt['x']:.1f},{pt['y']:.1f}"
+        anterior = pt["semana"]
+
     meses = []
     if inicio:
         nomes = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"]
@@ -213,6 +222,7 @@ def grafico(fases, total_semanas, inicio=None, plan=None, acima=None,
         "largura": largura, "altura": altura, "esq": esq, "topo": topo, "w": w, "h": h, "ymax": ymax,
         "volume": caminho(pts["volume"]), "intensidade": caminho(pts["intensidade"]), "pontos": pts,
         "plan_path": plan_path, "plan_pts": plan_pts, "meses": meses,
+        "real_path": real_path.strip(), "real_pts": real_pts,
         "divisorias": [x_sem(f["semana_ini"] - 1) for f in fases[1:]],
         "faixas": [{"x": x_sem(f["semana_ini"] - 1), "w": f["semanas"] / total_semanas * w,
                     "cor": f["cor"], "nome": f["nome"], "ordem": f["ordem"]} for f in fases],

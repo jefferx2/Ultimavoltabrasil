@@ -11,7 +11,7 @@
   </div>
   <div class="botoes">
     <button class="btn" type="button" onclick="copiar()">Copiar mensagem</button>
-    <a class="link" href="{{ url_for('alunos') }}">Voltar aos alunos</a>
+    <a class="link" href="{{ voltar or url_for('alunos') }}">{{ voltar_txt or 'Voltar aos alunos' }}</a>
   </div>
   <p class="sub" id="copiado" hidden>Copiado. É só colar no WhatsApp ou e-mail.</p>
 </section>

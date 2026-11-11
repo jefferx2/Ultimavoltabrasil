@@ -272,6 +272,36 @@ CREATE TABLE IF NOT EXISTS avaliacoes (
     criado_em TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 CREATE INDEX IF NOT EXISTS ix_aval_aluno ON avaliacoes(aluno_id, data);
+CREATE TABLE IF NOT EXISTS registros (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    treino_id INTEGER NOT NULL UNIQUE REFERENCES treinos(id) ON DELETE CASCADE,
+    status TEXT NOT NULL CHECK (status IN ('feito', 'parcial', 'nao_feito')),
+    data_realizada TEXT,
+    duracao_min INTEGER CHECK (duracao_min IS NULL OR duracao_min BETWEEN 1 AND 600),
+    rpe INTEGER CHECK (rpe IS NULL OR rpe BETWEEN 1 AND 10),
+    comentario TEXT,
+    atualizado_em TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS registro_corrida (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    registro_id INTEGER NOT NULL REFERENCES registros(id) ON DELETE CASCADE,
+    item_id INTEGER NOT NULL REFERENCES treino_corrida(id) ON DELETE CASCADE,
+    distancia_m INTEGER,
+    tempo_s REAL,
+    tempos_reps TEXT,
+    UNIQUE (registro_id, item_id)
+);
+CREATE TABLE IF NOT EXISTS registro_series (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    registro_id INTEGER NOT NULL REFERENCES registros(id) ON DELETE CASCADE,
+    item_id INTEGER NOT NULL REFERENCES treino_academia(id) ON DELETE CASCADE,
+    serie INTEGER NOT NULL,
+    carga_kg REAL,
+    reps INTEGER,
+    UNIQUE (registro_id, item_id, serie)
+);
+CREATE INDEX IF NOT EXISTS ix_regc_item ON registro_corrida(item_id);
+CREATE INDEX IF NOT EXISTS ix_regs_item ON registro_series(item_id);
 """
 
 SCHEMA_PG = """
@@ -359,9 +389,40 @@ CREATE TABLE IF NOT EXISTS avaliacoes (
     criado_em TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS ix_aval_aluno ON avaliacoes(aluno_id, data);
+CREATE TABLE IF NOT EXISTS registros (
+    id SERIAL PRIMARY KEY,
+    treino_id INTEGER NOT NULL UNIQUE REFERENCES treinos(id) ON DELETE CASCADE,
+    status TEXT NOT NULL CHECK (status IN ('feito', 'parcial', 'nao_feito')),
+    data_realizada TEXT,
+    duracao_min INTEGER CHECK (duracao_min IS NULL OR duracao_min BETWEEN 1 AND 600),
+    rpe INTEGER CHECK (rpe IS NULL OR rpe BETWEEN 1 AND 10),
+    comentario TEXT,
+    atualizado_em TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE TABLE IF NOT EXISTS registro_corrida (
+    id SERIAL PRIMARY KEY,
+    registro_id INTEGER NOT NULL REFERENCES registros(id) ON DELETE CASCADE,
+    item_id INTEGER NOT NULL REFERENCES treino_corrida(id) ON DELETE CASCADE,
+    distancia_m INTEGER,
+    tempo_s REAL,
+    tempos_reps TEXT,
+    UNIQUE (registro_id, item_id)
+);
+CREATE TABLE IF NOT EXISTS registro_series (
+    id SERIAL PRIMARY KEY,
+    registro_id INTEGER NOT NULL REFERENCES registros(id) ON DELETE CASCADE,
+    item_id INTEGER NOT NULL REFERENCES treino_academia(id) ON DELETE CASCADE,
+    serie INTEGER NOT NULL,
+    carga_kg REAL,
+    reps INTEGER,
+    UNIQUE (registro_id, item_id, serie)
+);
+CREATE INDEX IF NOT EXISTS ix_regc_item ON registro_corrida(item_id);
+CREATE INDEX IF NOT EXISTS ix_regs_item ON registro_series(item_id);
 """
 
-TABELAS = ("usuarios", "macrociclos", "fases", "treinos", "treino_academia", "treino_corrida", "avaliacoes")
+TABELAS = ("usuarios", "macrociclos", "fases", "treinos", "treino_academia", "treino_corrida", "avaliacoes",
+           "registros", "registro_corrida", "registro_series")
 
 # O app acessa direto pelo Postgres; a API pública do Supabase fica bloqueada.
 RLS_PG = "".join(f"""
@@ -383,6 +444,7 @@ COLUNAS_NOVAS = {
         "telefone": "TEXT",
         "observacoes": "TEXT",
         "trocar_senha": "INTEGER NOT NULL DEFAULT 0",
+        "admin": "INTEGER NOT NULL DEFAULT 0",   # professor administrador: cadastra outros professores
         # anamnese (Jack Daniels)
         "prova_categoria": "TEXT",       # chave de daniels.FAIXAS
         "nivel": "TEXT",                 # baixa / media / alta (escolhido pelo professor)
@@ -424,4 +486,7 @@ def init_db():
                     # IF NOT EXISTS: os workers do gunicorn sobem juntos e podem tentar ao mesmo tempo
                     se_nao = "IF NOT EXISTS " if IS_PG else ""
                     conn.execute(f"ALTER TABLE {tabela} ADD COLUMN {se_nao}{nome} {tipo}")
+        # Sem nenhum administrador, o primeiro professor cadastrado passa a ser
+        conn.execute("UPDATE usuarios SET admin = 1 WHERE id = (SELECT MIN(id) FROM usuarios WHERE perfil = 'instrutor') "
+                     "AND NOT EXISTS (SELECT 1 FROM usuarios WHERE admin = 1)")
         conn.commit()

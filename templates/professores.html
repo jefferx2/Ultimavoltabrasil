@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block titulo %}Professores · Última Volta Brasil{% endblock %}
+{% block conteudo %}
+<section class="painel">
+  <div class="cabecalho">
+    <div>
+      <p class="sobretitulo">Administração</p>
+      <h1>Professores</h1>
+    </div>
+    <a class="btn" href="{{ url_for('professor_novo') }}">+ Novo professor</a>
+  </div>
+  <div class="tabela-wrap">
+    <table class="tabela">
+      <thead><tr><th>Nome</th><th>E-mail</th><th>Alunos ativos</th><th>Acesso</th><th>Situação</th><th></th></tr></thead>
+      <tbody>
+        {% for p in professores %}
+        <tr class="{{ '' if p.ativo else 'inativo' }}">
+          <td><a href="{{ url_for('professor_editar', prof_id=p.id) }}"><b>{{ p.nome }}</b></a>{% if p.id == usuario.id %} <small class="mudo">(você)</small>{% endif %}</td>
+          <td>{{ p.email }}</td>
+          <td>{{ p.alunos }}</td>
+          <td>{{ 'Administrador' if p.admin else 'Professor' }}</td>
+          <td>
+            {% if not p.ativo %}<span class="selo selo-cinza">Inativo</span>
+            {% elif p.trocar_senha %}<span class="selo selo-amarelo">Aguardando 1º acesso</span>
+            {% else %}<span class="selo selo-verde">Ativo</span>{% endif %}
+          </td>
+          <td class="acoes"><a class="link" href="{{ url_for('professor_editar', prof_id=p.id) }}">Editar</a></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <p class="nota">Cada professor vê e acompanha apenas os próprios alunos. Administradores também cadastram professores.</p>
+</section>
+{% endblock %}

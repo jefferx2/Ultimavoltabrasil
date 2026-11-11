@@ -13,6 +13,7 @@ import ciclos
 import conteudo
 import daniels
 import db
+import registros
 import treinos
 
 app = Flask(__name__)
@@ -60,7 +61,7 @@ def usuario_atual():
     if "usuario" not in g:
         uid = session.get("uid")
         g.usuario = db.query_one(
-            "SELECT id, nome, email, perfil, trocar_senha FROM usuarios WHERE id = ? AND ativo = 1",
+            "SELECT id, nome, email, perfil, trocar_senha, admin FROM usuarios WHERE id = ? AND ativo = 1",
             (uid,)) if uid else None
     return g.usuario
 
@@ -77,6 +78,18 @@ def login_obrigatorio(perfil=None):
             return view(*args, user=user, **kwargs)
         return wrapper
     return deco
+
+
+def admin_obrigatorio(view):
+    @wraps(view)
+    def wrapper(*args, **kwargs):
+        user = usuario_atual()
+        if not user:
+            return redirect(url_for("login", next=request.path))
+        if user["perfil"] != "instrutor" or not user["admin"]:
+            abort(403)
+        return view(*args, user=user, **kwargs)
+    return wrapper
 
 
 def destino_por_perfil(perfil):
@@ -599,8 +612,20 @@ def _visao_com_totais(macro):
                    "academia": macro.get("ref_series_semana")}
     visao["ref_fonte"] = {"corrida": "macro" if macro.get("ref_km_semana") else ("faixa" if perfil["faixa"] else None),
                           "academia": "macro" if macro.get("ref_series_semana") else None}
+    regs = registros.carregar(t["id"] for t in todos)
+    real_sem = {"corrida": {}, "academia": {}}
+    for t in todos:
+        r = regs.get(t["id"])
+        if r and r["status"] != "nao_feito":
+            w = treinos.semana_de(visao["inicio"], date.fromisoformat(t["data"]))
+            v = registros.realizado(t, r)
+            real_sem[t["modalidade"]][w] = real_sem[t["modalidade"]].get(w, 0) + (
+                v["metros"] / 1000 if t["modalidade"] == "corrida" else v["series"])
     for mod, grupo in visao["grupos"].items():
         plan = ciclos.niveis_planejados(metricas[mod], mod, referencias[mod])
+        ref_real = plan["referencia"]
+        plan["realizado"] = {w: 5 * x / ref_real for w, x in real_sem[mod].items()} if ref_real else {}
+        plan["realizado_bruto"] = real_sem[mod]
         acima = ciclos.excessos(grupo, plan)
         visao["plan"][mod] = plan
         if grupo:
@@ -783,6 +808,11 @@ def _montar_semana(macro, n):
                      "treinos": por_dia.get(d.isoformat(), []), "hoje": d == date.today(),
                      "data_mais7": d + timedelta(days=7)})
     todos = [t for d in dias for t in d["treinos"]]
+    regs = registros.carregar(t["id"] for t in todos)
+    for t in todos:
+        t["registro"] = regs.get(t["id"])
+        t["real"] = registros.realizado(t, t["registro"]) if t["registro"] else None
+        t["passado"] = t["data"] <= date.today().isoformat()
     fases_semana = {}
     for mod, grupo in visao["grupos"].items():
         fases_semana[mod] = next((f for f in grupo if f["inicio"] <= ini + timedelta(days=3) <= f["fim"]), None)
@@ -1073,15 +1103,21 @@ def nao_encontrado(_):
 @click.option("--email", prompt=True)
 @click.option("--perfil", type=click.Choice(["instrutor", "aluno"]), prompt=True)
 @click.password_option("--senha")
-def criar_usuario(nome, email, perfil, senha):
+@click.option("--admin", is_flag=True, help="Professor administrador (cadastra outros professores).")
+def criar_usuario(nome, email, perfil, senha, admin):
     """Cria um usuário (use para o primeiro instrutor)."""
     email = email.strip().lower()
     if db.query_one("SELECT id FROM usuarios WHERE email = ?", (email,)):
         raise click.ClickException("Já existe usuário com esse e-mail.")
-    db.execute("INSERT INTO usuarios (nome, email, senha_hash, perfil) VALUES (?, ?, ?, ?)",
-               (nome.strip(), email, generate_password_hash(senha), perfil))
+    db.execute("INSERT INTO usuarios (nome, email, senha_hash, perfil, admin) VALUES (?, ?, ?, ?, ?)",
+               (nome.strip(), email, generate_password_hash(senha), perfil, 1 if admin and perfil == "instrutor" else 0))
+    db.init_db()  # garante um administrador se ainda não houver
     click.echo(f"Usuário {email} ({perfil}) criado.")
 
+
+# Rotas em arquivos próprios (importados no fim: usam as funções acima)
+import rotas_professores  # noqa: E402,F401
+import rotas_acompanhamento  # noqa: E402,F401
 
 if __name__ == "__main__":
     app.run(debug=True)

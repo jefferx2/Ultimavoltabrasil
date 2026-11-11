@@ -1,0 +1,122 @@
+{% extends "base.html" %}
+{% block titulo %}Acompanhamento · {{ aluno.nome }} · Última Volta Brasil{% endblock %}
+{% block conteudo %}
+<section class="painel">
+  <p class="sobretitulo">
+    {% if editavel %}<a href="{{ url_for('acompanhamento') }}">← Acompanhamento</a> · <a href="{{ url_for('aluno_editar', aluno_id=aluno.id) }}">Ficha do aluno</a>
+    {% else %}<a href="{{ url_for('painel_aluno') }}">← Meus treinos</a>{% endif %}
+  </p>
+  <div class="cabecalho">
+    <h1>{{ aluno.nome if editavel else 'Minha evolução' }}</h1>
+    {% if macro %}<a class="btn btn-contorno" href="{{ url_for('macro_ver', macro_id=macro.id) if editavel else url_for('aluno_macro', macro_id=macro.id) }}">{{ macro.nome }}</a>{% endif %}
+  </div>
+
+  <div class="agora">
+    <div class="agora-card"><span class="agora-mod">Treinos feitos (7 dias)</span>
+      <b>{% if r7.planejadas %}{{ r7.feitas }} de {{ r7.planejadas }}{% else %}—{% endif %}</b>
+      <span>{% if r7.adesao is not none %}{{ r7.adesao }}% de adesão{% else %}sem treinos no período{% endif %}</span></div>
+    <div class="agora-card"><span class="agora-mod">Corrida (7 dias)</span>
+      <b>{{ (r7.km_real * 1000) | km }}</b><span>de {{ (r7.km_plan * 1000) | km }} planejados</span></div>
+    <div class="agora-card"><span class="agora-mod">Academia (7 dias)</span>
+      <b>{{ r7.series_real }} séries</b><span>de {{ r7.series_plan }} planejadas{% if r7.kg_real %} · {{ r7.kg_real | kg }}{% endif %}</span></div>
+    <div class="agora-card"><span class="agora-mod">Esforço médio (7 dias)</span>
+      <b>{{ (r7.rpe_medio | numero) if r7.rpe_medio else '—' }}</b><span>escala de 1 a 10</span></div>
+  </div>
+  {% if alertas %}<div class="alerta alerta-aviso" style="margin-top: 14px">{% for a in alertas %}▲ {{ a }}{{ '' if loop.last else ' · ' }}{% endfor %}</div>{% endif %}
+
+  <div class="bloco">
+    <h2>Semanas</h2>
+    <div class="km-semanas" aria-label="Quilômetros planejados e realizados por semana">
+      {% for s in semanas %}
+      <div class="km-col {{ 'atual' if s.atual }}" title="{{ s.inicio | data_curta }} a {{ s.fim | data_curta }}: {{ (s.km_real * 1000) | km }} de {{ (s.km_plan * 1000) | km }}">
+        <div class="km-barras">
+          <span class="km-plan" style="height: {{ (100 * s.km_plan / maior_km) | round(1) }}%"></span>
+          <span class="km-real" style="height: {{ (100 * s.km_real / maior_km) | round(1) }}%"></span>
+        </div>
+        <small>{{ s.inicio | data_curta }}</small>
+      </div>
+      {% endfor %}
+    </div>
+    <p class="leg-linha"><span class="leg-q plan"></span> km planejados <span class="leg-q real"></span> km realizados</p>
+    <div class="tabela-wrap">
+      <table class="tabela tabela-semanas">
+        <thead><tr><th>Semana</th><th>Treinos feitos</th><th>Corrida</th><th>Academia</th><th>Esforço médio</th><th>Carga interna</th></tr></thead>
+        <tbody>
+          {% for s in semanas | reverse %}
+          <tr class="{{ 'atual' if s.atual }}">
+            <td>{{ s.inicio | data_curta }} a {{ s.fim | data_curta }}{% if s.atual %} <small class="mudo">(atual)</small>{% endif %}</td>
+            <td>{% if s.planejadas %}{{ s.feitas }} de {{ s.planejadas }}{% else %}—{% endif %}</td>
+            <td>{% if s.km_plan or s.km_real %}{{ (s.km_real * 1000) | km }} <small class="mudo">de {{ (s.km_plan * 1000) | km }}</small>{% else %}—{% endif %}</td>
+            <td>{% if s.series_plan or s.series_real %}{{ s.series_real }} <small class="mudo">de {{ s.series_plan }} séries</small>{% else %}—{% endif %}</td>
+            <td>{{ (s.rpe_medio | numero) if s.rpe_medio else '—' }}</td>
+            <td>{{ s.carga_interna or '—' }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <p class="nota">Carga interna = esforço (1 a 10) × duração em minutos, somada na semana. Aumentos grandes de uma semana para outra merecem atenção.</p>
+  </div>
+
+  <div class="bloco">
+    <h2>Sessões</h2>
+    {% if sessoes %}
+    <div class="sessoes">
+      {% for t in sessoes %}{% set r = t.registro %}
+      <article class="sessao sessao-{{ r.status if r else 'pendente' }}">
+        <header>
+          <span class="treino-mod">{{ MODALIDADES[t.modalidade] }}</span>
+          <b>{{ t.data | data_br }}{% if t.titulo %} · {{ t.titulo }}{% endif %}</b>
+          <span class="selo {{ 'selo-verde' if r and r.status == 'feito' else ('selo-amarelo' if r and r.status == 'parcial' else ('selo-cinza' if r else 'selo-pendente')) }}">
+            {{ STATUS[r.status] if r else 'Sem registro' }}</span>
+        </header>
+        <div class="sessao-vol">
+          {% if t.modalidade == 'corrida' %}
+            Prescrito {{ t.vol.metros | km }} · Realizado <b>{{ t.real.metros | km }}</b>{% if t.real.segundos %} em {{ t.real.segundos | duracao }}{% endif %}
+          {% else %}
+            Prescrito {{ t.vol.series }} séries · Realizado <b>{{ t.real.series }} séries</b>{% if t.real.kg %} · {{ t.real.kg | kg }}{% endif %}
+          {% endif %}
+          {% if r and r.rpe %} · esforço <b>{{ r.rpe }}</b>{% endif %}
+        </div>
+        {% if t.comparacao %}
+          <div class="sessao-ritmos">
+            {% for c in t.comparacao if c.alvo %}
+              <span><span class="zbadge z-{{ c.zona }}">{{ c.zona }}</span> {{ c.item.tipo }}: {{ c.real | pace }}
+                <span class="{{ 'dif-ok' if c.dif | abs <= 5 else ('dif-rapido' if c.dif < 0 else 'dif-lento') }}">({{ '%+d' % c.dif }} s)</span></span>
+            {% endfor %}
+          </div>
+        {% endif %}
+        {% if r and r.comentario %}<p class="sessao-coment">“{{ r.comentario }}”</p>{% endif %}
+        {% if editavel and r %}<a class="link" href="{{ url_for('registro_ver', treino_id=t.id) }}">Ver registro completo</a>
+        {% elif not editavel %}<a class="link" href="{{ url_for('registro_treino', treino_id=t.id) }}">{{ 'Editar registro' if r else 'Registrar' }}</a>{% endif %}
+      </article>
+      {% endfor %}
+    </div>
+    {% else %}<p class="nota">Nenhum treino nas últimas 12 semanas.</p>{% endif %}
+  </div>
+
+  <div class="bloco">
+    <h2>Progressão de carga</h2>
+    {% if progressao %}
+    <div class="tabela-wrap">
+      <table class="tabela tabela-prog">
+        <thead><tr><th>Exercício</th><th>Evolução da maior carga</th><th>Primeira</th><th>Última</th><th>Máxima</th><th>Variação</th><th>Sessões</th></tr></thead>
+        <tbody>
+          {% for e in progressao %}
+          <tr>
+            <td><b>{{ e.nome }}</b></td>
+            <td><svg viewBox="0 0 120 28" class="spark" role="img" aria-label="Evolução de {{ e.nome }}"><path d="{{ e.linha }}"/></svg></td>
+            <td>{{ e.primeira | numero }} kg</td>
+            <td><b>{{ e.ultima | numero }} kg</b></td>
+            <td>{{ e.maxima | numero }} kg</td>
+            <td>{% if e.variacao is not none %}<span class="{{ 'dif-ok' if e.variacao > 0 else ('mudo' if e.variacao == 0 else 'dif-lento') }}">{{ '%+d' % e.variacao }}%</span>{% else %}—{% endif %}</td>
+            <td>{{ e.sessoes }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}<p class="nota">Aparece quando houver séries de academia registradas com carga.</p>{% endif %}
+  </div>
+</section>
+{% endblock %}

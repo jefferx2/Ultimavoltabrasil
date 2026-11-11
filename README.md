@@ -36,3 +36,10 @@ ExecStart=/opt/ultimavolta/venv/bin/gunicorn -w 2 -b 127.0.0.1:<PORTA> app:app
   (`db.py`). Tamanho máximo do pool por processo: variável `DB_POOL_MAX` (padrão 4).
   Com 2 processos do gunicorn são no máximo 8 conexões, abaixo do limite do Session pooler do Supabase.
 - Diagnóstico da distância até o banco: `diagnostico_banco.py` (instruções no próprio arquivo).
+
+## Professores e acompanhamento
+- O primeiro professor cadastrado é o **administrador** (menu "Professores"): cadastra outros professores,
+  redefine senhas, desativa e transfere alunos. Cada professor vê só os próprios alunos.
+  Pela linha de comando: `flask --app app criar-usuario --admin`.
+- O aluno registra cada treino em "Treinos da semana" → "Registrar treino" (`rotas_acompanhamento.py`,
+  `registros.py`). O professor acompanha em "Acompanhamento".

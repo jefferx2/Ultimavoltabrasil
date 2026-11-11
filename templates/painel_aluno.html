@@ -9,7 +9,10 @@
         <h1>{{ macro.nome }}</h1>
         {% if macro.competicao %}<p class="sub">🏁 {{ macro.competicao }}</p>{% endif %}
       </div>
-      <a class="btn" href="{{ url_for('aluno_semanas', macro_id=macro.id) }}">Treinos da semana</a>
+      <div class="acoes-topo">
+        <a class="btn" href="{{ url_for('aluno_semanas', macro_id=macro.id) }}">Treinos da semana</a>
+        <a class="btn btn-contorno" href="{{ url_for('aluno_acompanhamento') }}">Minha evolução</a>
+      </div>
     </div>
     {% if macro.observacoes %}<p class="nota bloco-obs">{{ macro.observacoes }}</p>{% endif %}
   {% if perfil.paces %}

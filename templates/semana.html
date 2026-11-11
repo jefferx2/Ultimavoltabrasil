@@ -108,8 +108,22 @@
             </table>
           {% endif %}
           {% if t.observacoes %}<p class="treino-obs">{{ t.observacoes }}</p>{% endif %}
+          {% set r = t.registro %}
+          {% if r %}
+            <p class="treino-reg treino-reg-{{ r.status }}">
+              <b>{{ {'feito': '✓ Feito', 'parcial': '◐ Feito em parte', 'nao_feito': '✕ Não feito'}[r.status] }}</b>
+              {% if t.real and r.status != 'nao_feito' %}· {{ (t.real.metros | km) if t.modalidade == 'corrida' else (t.real.series ~ ' séries' ~ ((' · ' ~ (t.real.kg | kg)) if t.real.kg else '')) }}{% endif %}
+              {% if r.rpe %}· esforço {{ r.rpe }}{% endif %}
+            </p>
+          {% elif t.passado %}
+            <p class="treino-reg treino-reg-pendente">Sem registro</p>
+          {% endif %}
+          {% if not editavel and t.passado %}
+          <footer><a class="btn btn-peq" href="{{ url_for('registro_treino', treino_id=t.id) }}">{{ 'Editar registro' if r else 'Registrar treino' }}</a></footer>
+          {% endif %}
           {% if editavel %}
           <footer>
+            {% if r %}<a class="link" href="{{ url_for('registro_ver', treino_id=t.id) }}">Ver registro</a>{% endif %}
             <a class="link" href="{{ url_for('treino_editar', treino_id=t.id) }}">Editar</a>
             <details class="duplicar">
               <summary>Copiar para…</summary>

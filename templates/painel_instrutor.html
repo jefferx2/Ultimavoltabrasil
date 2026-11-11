@@ -15,7 +15,16 @@
       <p>Abra a ficha do aluno para montar o macrociclo com as fases de academia e corrida.</p>
       <span class="numero">{{ total_macros }}</span> <span class="tag">macrociclo{{ 's' if total_macros != 1 }}</span>
     </a>
-    <div class="card"><h2>Acompanhamento</h2><p>Desempenho registrado pelos alunos.</p><span class="tag">em breve</span></div>
+    <a class="card card-link" href="{{ url_for('acompanhamento') }}">
+      <h2>Acompanhamento</h2>
+      <p>Treinos feitos, km e cargas registrados pelos alunos, com alertas.</p>
+    </a>
+    {% if usuario.admin %}
+    <a class="card card-link" href="{{ url_for('professores') }}">
+      <h2>Professores</h2>
+      <p>Cadastro e acesso dos professores.</p>
+    </a>
+    {% endif %}
   </div>
 </section>
 {% endblock %}
