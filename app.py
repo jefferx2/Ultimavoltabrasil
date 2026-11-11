@@ -6,10 +6,11 @@ from datetime import date, timedelta
 from functools import wraps
 
 import click
-from flask import Flask, abort, flash, g, redirect, render_template, request, session, url_for
+from flask import Flask, abort, flash, g, has_app_context, redirect, render_template, request, session, url_for
 from werkzeug.security import check_password_hash, generate_password_hash
 
 import ciclos
+import conteudo
 import daniels
 import db
 import treinos
@@ -22,12 +23,39 @@ app.config["SESSION_COOKIE_SECURE"] = os.environ.get("FLASK_ENV") == "production
 
 db.init_db()
 
+
+# Uma conexão do pool por requisição (aberta só se a página usar o banco). Registrado antes dos
+# demais before_request para que todas as consultas da página usem a mesma conexão.
+@app.before_request
+def _abrir_conexao():
+    db.iniciar_requisicao()
+
+
+@app.teardown_request
+def _devolver_conexao(erro=None):
+    db.encerrar_requisicao(erro)
+
 SENHA_MIN = 8
 PROVAS_SUGERIDAS = ["800 m", "1500 m", "3000 m", "5 km", "10 km", "21 km", "42 km"]
 EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
 
 # ---------------------------------------------------------------- utilidades
+def _memo(chave, carregar):
+    """Guarda o resultado durante a requisição (evita repetir a mesma consulta na mesma página).
+    Seguro porque toda gravação termina em redirect: a página seguinte é outra requisição."""
+    if not has_app_context():
+        return carregar()
+    cache = g.setdefault("_memo", {})
+    if chave not in cache:
+        cache[chave] = carregar()
+    return cache[chave]
+
+
+def _aluno_por_id(aluno_id):
+    return _memo(("aluno", aluno_id), lambda: db.query_one("SELECT * FROM usuarios WHERE id = ?", (aluno_id,)))
+
+
 def usuario_atual():
     if "usuario" not in g:
         uid = session.get("uid")
@@ -101,6 +129,15 @@ app.add_template_filter(treinos.fmt_duracao, "duracao")
 app.add_template_filter(treinos.fmt_kg, "kg")
 
 
+MESES = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"]
+
+
+@app.template_filter("data_mes")
+def data_mes(valor):
+    d = date.fromisoformat(str(valor)[:10])
+    return f"{d.day} {MESES[d.month - 1]} {d.year}"
+
+
 @app.template_filter("data_curta")
 def data_curta(valor):
     try:
@@ -132,7 +169,8 @@ def injetar():
 # ---------------------------------------------------------------- públicas / login
 @app.route("/")
 def home():
-    return render_template("home.html")
+    artigos = sorted(conteudo.ARTIGOS, key=lambda a: a["data"], reverse=True)
+    return render_template("home.html", artigos=artigos, substack=conteudo.SUBSTACK, d=daniels)
 
 
 @app.route("/login", methods=["GET", "POST"])
@@ -204,8 +242,8 @@ def painel_instrutor(user):
 
 def perfil_corrida(aluno):
     """VDOT (avaliação mais recente), paces de treino e faixa de volume do aluno."""
-    aval = db.query_one("SELECT * FROM avaliacoes WHERE aluno_id = ? ORDER BY data DESC, id DESC LIMIT 1",
-                        (aluno["id"],))
+    aval = _memo(("avaliacao", aluno["id"]), lambda: db.query_one(
+        "SELECT * FROM avaliacoes WHERE aluno_id = ? ORDER BY data DESC, id DESC LIMIT 1", (aluno["id"],)))
     p = daniels.paces(aval["vdot"]) if aval else None
     return {
         "avaliacao": aval, "vdot": aval["vdot"] if aval else None, "paces": p,
@@ -480,7 +518,22 @@ def _validar_macro(form):
 
 
 def _fases_do_macro(macro_id):
-    return db.query_all("SELECT * FROM fases WHERE macrociclo_id = ? ORDER BY modalidade, ordem", (macro_id,))
+    fases = _memo(("fases", macro_id), lambda: db.query_all(
+        "SELECT * FROM fases WHERE macrociclo_id = ? ORDER BY modalidade, ordem", (macro_id,)))
+    return [dict(f) for f in fases]
+
+
+def _carregar_fases_de(macro_ids):
+    """Busca as fases de vários macrociclos numa consulta só e guarda no cache da requisição."""
+    if not has_app_context():
+        return
+    faltam = [m for m in macro_ids if ("fases", m) not in g.get("_memo", {})]
+    if not faltam:
+        return
+    todas = db.query_all(f"SELECT * FROM fases WHERE macrociclo_id IN ({','.join('?' * len(faltam))}) "
+                         "ORDER BY modalidade, ordem", faltam)
+    for m in faltam:
+        _memo(("fases", m), lambda m=m: [f for f in todas if f["macrociclo_id"] == m])
 
 
 def _renumerar(t, macro_id, modalidade):
@@ -538,7 +591,7 @@ def _visao_com_totais(macro):
     por_dia = treinos.carregar(macro["id"], visao["inicio"], fim)
     todos = [t for dia in por_dia.values() for t in dia]
     visao["totais"], visao["plan"] = {}, {}
-    aluno = db.query_one("SELECT * FROM usuarios WHERE id = ?", (macro["aluno_id"],))
+    aluno = _aluno_por_id(macro["aluno_id"])
     perfil = perfil_corrida(aluno)
     visao["perfil"] = perfil
     metricas = treinos.metricas_semanais(todos, visao["inicio"], perfil["paces"])
@@ -734,7 +787,7 @@ def _montar_semana(macro, n):
     for mod, grupo in visao["grupos"].items():
         fases_semana[mod] = next((f for f in grupo if f["inicio"] <= ini + timedelta(days=3) <= f["fim"]), None)
     resumo = {mod: treinos.somar(t["vol"] for t in todos if t["modalidade"] == mod) for mod in ciclos.MODALIDADES}
-    aluno = db.query_one("SELECT * FROM usuarios WHERE id = ?", (macro["aluno_id"],))
+    aluno = _aluno_por_id(macro["aluno_id"])
     perfil = perfil_corrida(aluno)
     met = treinos.metricas_semanais([t for t in todos if t["modalidade"] == "corrida"], ini, perfil["paces"])
     zonas = met["corrida"].get(1)  # semana 1 relativa ao início desta semana
@@ -838,7 +891,7 @@ def _form_treino(user, macro, treino, novo):
             it["distancia"] = treinos.fmt_distancia(it["distancia_m"])
     n = min(max(1, treinos.semana_de(visao["inicio"], d)), _limite_semanas(macro, visao))
     voltar = url_for("semana", macro_id=macro["id"], n=n) + f"#d{d.isoformat()}"
-    aluno = db.query_one("SELECT * FROM usuarios WHERE id = ?", (macro["aluno_id"],))
+    aluno = _aluno_por_id(macro["aluno_id"])
     return render_template("treino_form.html", macro=macro, treino=treino, novo=novo, fase=fase, voltar=voltar,
                            perfil=perfil_corrida(aluno), d=daniels,
                            sugestao=sugestao, tipos=treinos.TIPOS_CORRIDA,
@@ -934,6 +987,7 @@ def _macro_vigente(aluno_id, hoje=None):
     """Macrociclo em andamento; senão o próximo a começar; senão o mais recente."""
     hoje = hoje or date.today()
     macros = db.query_all("SELECT * FROM macrociclos WHERE aluno_id = ? ORDER BY data_inicio DESC", (aluno_id,))
+    _carregar_fases_de([m["id"] for m in macros])
     andamento, futuros = None, []
     for m in macros:
         v = ciclos.montar(m, _fases_do_macro(m["id"]), hoje)
@@ -956,7 +1010,7 @@ def painel_aluno(user):
     (macro, visao), macros = _macro_vigente(user["id"])
     if macro:
         visao = _visao_com_totais(macro)
-    aluno = db.query_one("SELECT * FROM usuarios WHERE id = ?", (user["id"],))
+    aluno = _aluno_por_id(user["id"])
     return render_template("painel_aluno.html", macro=macro, v=visao, macros=macros,
                            perfil=perfil_corrida(aluno), d=daniels)
 

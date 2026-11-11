@@ -1,14 +1,139 @@
 {% extends "base.html" %}
-{% block body_class %}pg-home{% endblock %}
-{% block conteudo %}
-<section class="hero">
-  <div class="pista" aria-hidden="true"></div>
-  <div class="hero-txt">
-    <p class="sobretitulo">Corrida de pista e rua</p>
-    <h1>Treine para a sua<br><em>melhor última volta.</em></h1>
-    <p class="lead">Projeto independente dedicado à corrida, com foco em performance e esporte competitivo.
-      Ciclos de treino de corrida e academia acompanhados pelo seu instrutor.</p>
-    <a class="btn btn-grande" href="{{ url_for('login') }}">Acessar o sistema</a>
+{% block titulo %}Última Volta Brasil · Corrida de pista e rua{% endblock %}
+{% block body_class %}site{% endblock %}
+{% block head_extra %}
+  <meta name="description" content="Conteúdo independente sobre corrida de pista e rua: treino, performance e saúde.">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/site.css') }}">
+{% endblock %}
+
+{% block topo %}
+<header class="s-topo">
+  <a class="s-marca" href="{{ url_for('home') }}" aria-label="Última Volta Brasil, início">
+    <svg viewBox="0 0 44 26" aria-hidden="true"><rect x="2" y="2" width="40" height="22" rx="11" class="m-pista"/><rect x="9" y="8" width="26" height="10" rx="5" class="m-campo"/><path d="M30 18v6" class="m-chegada"/></svg>
+    <span>Última Volta <b>Brasil</b></span>
+  </a>
+  <nav class="s-nav" aria-label="Seções">
+    <a href="#artigos">Artigos</a>
+    <a href="#metodo">Método</a>
+    <a href="#sobre">Sobre</a>
+  </nav>
+  <div class="s-acesso">
+    {% if usuario %}
+      <a class="s-btn" href="{{ url_for('painel_instrutor' if usuario.perfil == 'instrutor' else 'painel_aluno') }}">Meu painel</a>
+    {% else %}
+      <a class="s-btn" href="{{ url_for('login') }}"><span class="longo">Acesso de alunos e professores</span><span class="curto">Entrar</span></a>
+    {% endif %}
   </div>
+</header>
+{% endblock %}
+
+{% block conteudo %}
+<section class="s-hero">
+  <div class="s-hero-txt">
+    <h1>A prova se decide na última volta.</h1>
+    <p>Conteúdo independente sobre corrida de pista e rua: treino, performance e saúde, com base na prática e no que os estudos mostram.</p>
+    <div class="s-hero-acoes">
+      <a class="s-btn" href="#artigos">Ler os artigos</a>
+      <a class="s-link" href="{{ substack }}" rel="noopener">Assinar a newsletter no Substack</a>
+    </div>
+  </div>
+
+  <figure class="s-pista" aria-hidden="true">
+    <svg viewBox="0 0 600 340" id="pista">
+      <rect x="20" y="20" width="560" height="300" rx="150" class="p-tartan"/>
+      <rect x="92" y="92" width="416" height="156" rx="78" class="p-campo"/>
+      {% for k in range(7) %}{% set i = 20 + k * 12 %}
+        <rect x="{{ i }}" y="{{ i }}" width="{{ 560 - 2 * k * 12 }}" height="{{ 300 - 2 * k * 12 }}" rx="{{ 150 - k * 12 }}" class="p-raia"/>
+      {% endfor %}
+      <g class="p-chegada">
+        {% for r in range(6) %}{% for c in range(2) %}
+          <rect x="{{ 424 + c * 6 }}" y="{{ 248 + r * 12 }}" width="6" height="6" class="{{ 'q-a' if (r + c) % 2 == 0 else 'q-b' }}"/>
+          <rect x="{{ 424 + c * 6 }}" y="{{ 254 + r * 12 }}" width="6" height="6" class="{{ 'q-b' if (r + c) % 2 == 0 else 'q-a' }}"/>
+        {% endfor %}{% endfor %}
+      </g>
+      <path id="volta" d="M430,254 A84,84 0 0 0 430,86 H170 A84,84 0 0 0 170,254 Z" fill="none"/>
+      <path id="rastro" d="M430,254 A84,84 0 0 0 430,86 H170 A84,84 0 0 0 170,254 Z" class="p-rastro"/>
+      <circle id="corredor" r="8" cx="430" cy="254" class="p-corredor"/>
+      <text x="300" y="178" class="p-400" text-anchor="middle">400 m</text>
+    </svg>
+  </figure>
 </section>
+
+<section class="s-secao" id="artigos">
+  <div class="s-cab">
+    <h2>Artigos</h2>
+    <a class="s-link" href="{{ substack }}/archive" rel="noopener">Ver todos no Substack</a>
+  </div>
+  <ol class="s-sumula">
+    {% for a in artigos %}
+    <li>
+      <time datetime="{{ a.data }}">{{ a.data | data_mes }}</time>
+      <a href="{{ a.link }}" rel="noopener">
+        <h3>{{ a.titulo }}</h3>
+        <p>{{ a.resumo }}</p>
+      </a>
+      <span class="s-assunto s-assunto-{{ a.assunto | lower }}">{{ a.assunto }}</span>
+    </li>
+    {% endfor %}
+  </ol>
+</section>
+
+<section class="s-secao s-metodo" id="metodo">
+  <div class="s-metodo-txt">
+    <h2>Treino com método</h2>
+    <p>Os treinos seguem a metodologia de Jack Daniels. A partir de um tempo recente de prova, calculamos o VDOT do atleta e, dele, os ritmos de cada tipo de treino. Assim cada sessão tem um objetivo claro e uma intensidade medida, e o volume semanal respeita o nível de cada um.</p>
+  </div>
+  <div class="s-escala" role="list" aria-label="Zonas de treino, da mais leve à mais intensa">
+    {% for z, desc in (('E', 'Rodagens, longões e recuperação. A base de tudo.'),
+                       ('M', 'Ritmo de maratona, para resistência específica.'),
+                       ('T', 'Limiar: esforço confortavelmente difícil, sustentado.'),
+                       ('I', 'Intervalos no VO2máx, com pausas curtas.'),
+                       ('R', 'Repetições rápidas, para velocidade e economia.')) %}
+    <div class="s-zona s-z-{{ z }}" role="listitem">
+      <b>{{ z }}</b>
+      <span class="s-zona-nome">{{ d.NOMES_ZONAS[z].split(' (')[0] }}</span>
+      <p>{{ desc }}</p>
+    </div>
+    {% endfor %}
+  </div>
+  <p class="s-nota">Da zona mais leve (E) à mais intensa (R).</p>
+</section>
+
+<section class="s-secao s-sobre" id="sobre">
+  <h2>Sobre</h2>
+  <div class="s-sobre-cols">
+    <p>O Última Volta Brasil é um projeto independente dedicado à corrida de pista e de rua, com foco em performance e esporte competitivo.</p>
+    <p>O conteúdo junta a experiência prática de quem treina e compete com estudos fundamentados em livros e profissionais da área.</p>
+  </div>
+  <a class="s-btn s-btn-claro" href="{{ substack }}" rel="noopener">Receber os artigos por e-mail</a>
+</section>
+{% endblock %}
+
+{% block rodape %}
+<footer class="s-rodape">
+  <span>© 2026 Última Volta Brasil</span>
+  <a href="{{ substack }}" rel="noopener">Substack</a>
+  <a href="{{ url_for('login') }}">Acesso de alunos e professores</a>
+</footer>
+<script>
+(function () {
+  const caminho = document.getElementById('volta'), corredor = document.getElementById('corredor'),
+        rastro = document.getElementById('rastro');
+  if (!caminho || !corredor) return;
+  const total = caminho.getTotalLength();
+  rastro.style.strokeDasharray = total; rastro.style.strokeDashoffset = total;
+  const chegada = () => { rastro.style.strokeDashoffset = 0; corredor.classList.add('chegou'); };
+  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) { chegada(); return; }
+  const duracao = 3200; let inicio = null;
+  const ritmo = t => t < .82 ? t / .82 * .86 : .86 + (t - .82) / .18 * .14;   // acelera na reta final
+  function quadro(ts) {
+    if (inicio === null) inicio = ts;
+    const t = Math.min(1, (ts - inicio) / duracao), d = ritmo(t) * total, p = caminho.getPointAtLength(d);
+    corredor.setAttribute('cx', p.x); corredor.setAttribute('cy', p.y);
+    rastro.style.strokeDashoffset = total - d;
+    if (t < 1) requestAnimationFrame(quadro); else chegada();
+  }
+  setTimeout(() => requestAnimationFrame(quadro), 500);
+})();
+</script>
 {% endblock %}

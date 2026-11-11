@@ -4,24 +4,52 @@ Escolha pela variável DATABASE_URL:
   - ausente           -> SQLite em ./ultimavolta.db
   - postgresql://...  -> Postgres
 O SQL do app é escrito com '?' como marcador; aqui é traduzido para '%s' no Postgres.
+
+Desempenho: no Postgres as conexões ficam abertas num pool (por processo) e são reaproveitadas.
+Dentro de uma requisição web todas as consultas usam a MESMA conexão (aberta só se a página
+consultar o banco e devolvida ao pool no fim), em vez de abrir uma conexão por consulta.
 """
+import atexit
+import contextvars
 import os
 import sqlite3
+from contextlib import contextmanager
 
 DATABASE_URL = os.environ.get("DATABASE_URL", "").strip()
 IS_PG = DATABASE_URL.startswith(("postgres://", "postgresql://"))
 SQLITE_PATH = os.environ.get("SQLITE_PATH", os.path.join(os.path.dirname(__file__), "ultimavolta.db"))
+POOL_MAX = int(os.environ.get("DB_POOL_MAX", "4"))
 
 if IS_PG:
     import psycopg
     from psycopg.rows import dict_row
+    from psycopg_pool import ConnectionPool
+
+_pool = None
+_requisicao = contextvars.ContextVar("db_requisicao", default=None)
+estatistica = {"conexoes": 0, "consultas": 0}   # usado nos testes de desempenho
 
 
 def _sql(query):
     return query.replace("?", "%s") if IS_PG else query
 
 
+def _obter_pool():
+    global _pool
+    if _pool is None:
+        _pool = ConnectionPool(
+            DATABASE_URL, min_size=1, max_size=POOL_MAX, open=True,
+            kwargs={"row_factory": dict_row},
+            check=ConnectionPool.check_connection,   # descarta conexão derrubada pelo servidor
+            max_idle=300, max_lifetime=1800, timeout=15, name="ultimavolta",
+        )
+        atexit.register(_pool.close)
+    return _pool
+
+
 def connect():
+    """Conexão avulsa (fora do pool). Usada na criação das tabelas."""
+    estatistica["conexoes"] += 1
     if IS_PG:
         return psycopg.connect(DATABASE_URL, row_factory=dict_row)
     conn = sqlite3.connect(SQLITE_PATH)
@@ -30,21 +58,84 @@ def connect():
     return conn
 
 
+@contextmanager
+def _conexao_nova():
+    """Conexão do pool (Postgres) ou arquivo (SQLite); commit/rollback e devolução automáticos."""
+    if IS_PG:
+        estatistica["conexoes"] += 1
+        with _obter_pool().connection() as conn:
+            yield conn
+        return
+    conn = connect()
+    try:
+        yield conn
+        conn.commit()
+    except BaseException:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
+class _Requisicao:
+    """Guarda a conexão da requisição atual (aberta só no primeiro uso)."""
+
+    def __init__(self):
+        self.cm = None
+        self.conn = None
+
+    def obter(self):
+        if self.conn is None:
+            self.cm = _conexao_nova()
+            self.conn = self.cm.__enter__()
+        return self.conn
+
+    def fechar(self, erro=None):
+        if self.cm is not None:
+            cm, self.cm, self.conn = self.cm, None, None
+            if erro is None:
+                cm.__exit__(None, None, None)
+            else:
+                cm.__exit__(type(erro), erro, erro.__traceback__)
+
+
+def iniciar_requisicao():
+    _requisicao.set(_Requisicao())
+
+
+def encerrar_requisicao(erro=None):
+    req = _requisicao.get()
+    _requisicao.set(None)
+    if req is not None:
+        req.fechar(erro)
+
+
+@contextmanager
+def _conexao():
+    req = _requisicao.get()
+    if req is not None:
+        yield req.obter()        # mesma conexão para toda a requisição
+        return
+    with _conexao_nova() as conn:
+        yield conn
+
+
 def query_one(query, params=()):
-    with connect() as conn:
-        cur = conn.execute(_sql(query), params)
-        row = cur.fetchone()
+    estatistica["consultas"] += 1
+    with _conexao() as conn:
+        row = conn.execute(_sql(query), params).fetchone()
         return dict(row) if row else None
 
 
 def query_all(query, params=()):
-    with connect() as conn:
-        cur = conn.execute(_sql(query), params)
-        return [dict(r) for r in cur.fetchall()]
+    estatistica["consultas"] += 1
+    with _conexao() as conn:
+        return [dict(r) for r in conn.execute(_sql(query), params).fetchall()]
 
 
 def execute(query, params=()):
-    with connect() as conn:
+    estatistica["consultas"] += 1
+    with _conexao() as conn:
         conn.execute(_sql(query), params)
         conn.commit()
 
@@ -58,25 +149,31 @@ class Transacao:
     """
 
     def __enter__(self):
-        self.conn = connect()
+        self._cm = _conexao()
+        self.conn = self._cm.__enter__()
+        self.conn.commit()   # fecha leituras pendentes da requisição: a transação começa limpa
         return self
 
-    def __exit__(self, exc_type, *_):
+    def __exit__(self, exc_type, exc, tb):
         try:
             if exc_type:
                 self.conn.rollback()
             else:
                 self.conn.commit()
         finally:
-            self.conn.close()
+            self._cm.__exit__(exc_type, exc, tb)
+        return False
 
     def execute(self, query, params=()):
+        estatistica["consultas"] += 1
         self.conn.execute(_sql(query), params)
 
     def query_all(self, query, params=()):
+        estatistica["consultas"] += 1
         return [dict(r) for r in self.conn.execute(_sql(query), params).fetchall()]
 
     def insert(self, query, params=()):
+        estatistica["consultas"] += 1
         if IS_PG:
             return self.conn.execute(_sql(query) + " RETURNING id", params).fetchone()["id"]
         return self.conn.execute(query, params).lastrowid
@@ -86,6 +183,7 @@ def insert(query, params=()):
     """INSERT que devolve o id criado."""
     with Transacao() as t:
         return t.insert(query, params)
+
 
 
 SCHEMA_SQLITE = """

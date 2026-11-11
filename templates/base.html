@@ -7,8 +7,10 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;800&family=Barlow:wght@400;500;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+  {% block head_extra %}{% endblock %}
 </head>
 <body class="{% block body_class %}{% endblock %}">
+  {% block topo %}
   <header class="topo">
     <a class="marca" href="{{ url_for('home') }}">
       <img src="{{ url_for('static', filename='img/logo.png') }}" alt="" onerror="this.remove()">
@@ -29,6 +31,7 @@
       {% endif %}
     </nav>
   </header>
+  {% endblock %}
 
   <main>
     {% with msgs = get_flashed_messages(with_categories=true) %}
@@ -41,6 +44,6 @@
     {% block conteudo %}{% endblock %}
   </main>
 
-  <footer class="rodape">© 2026 Última Volta Brasil · Performance · Atletismo · Saúde</footer>
+  {% block rodape %}<footer class="rodape">© 2026 Última Volta Brasil · Performance · Atletismo · Saúde</footer>{% endblock %}
 </body>
 </html>

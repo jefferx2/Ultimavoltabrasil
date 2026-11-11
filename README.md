@@ -30,3 +30,9 @@ DATABASE_URL=postgresql://usuario:senha@host:5432/postgres
 ```
 ExecStart=/opt/ultimavolta/venv/bin/gunicorn -w 2 -b 127.0.0.1:<PORTA> app:app
 ```
+
+## Desempenho
+- No Postgres as conexões ficam num **pool** por processo e cada página usa **uma só conexão**
+  (`db.py`). Tamanho máximo do pool por processo: variável `DB_POOL_MAX` (padrão 4).
+  Com 2 processos do gunicorn são no máximo 8 conexões, abaixo do limite do Session pooler do Supabase.
+- Diagnóstico da distância até o banco: `diagnostico_banco.py` (instruções no próprio arquivo).
