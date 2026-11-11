@@ -1,7 +1,9 @@
 """Última Volta Brasil — sistema de treinos (instrutor / aluno)."""
+import logging
 import os
 import re
 import secrets
+import time
 from datetime import date, timedelta
 from functools import wraps
 
@@ -15,12 +17,33 @@ import daniels
 import db
 import registros
 import treinos
+import vinculos
+from vinculos import params_acesso, sql_acesso
 
 app = Flask(__name__)
 app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY") or secrets.token_hex(32)
 app.config["SESSION_COOKIE_HTTPONLY"] = True
 app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
 app.config["SESSION_COOKIE_SECURE"] = os.environ.get("FLASK_ENV") == "production"
+# Arquivos estáticos guardados pelo navegador por 1 ano: a URL leva a versão do arquivo (?v=...),
+# então qualquer alteração gera uma URL nova e o navegador baixa de novo.
+app.config["SEND_FILE_MAX_AGE_DEFAULT"] = 31536000
+LIMITE_LENTO_MS = int(os.environ.get("LIMITE_LENTO_MS", "500"))
+log = logging.getLogger("ultimavolta")
+logging.basicConfig(level=logging.INFO, format="%(message)s")
+_versoes = {}
+
+
+@app.url_defaults
+def _versao_estatico(endpoint, values):
+    if endpoint == "static" and "filename" in values and not values["filename"].startswith("fonts/"):
+        arq = values["filename"]
+        if arq not in _versoes:
+            try:
+                _versoes[arq] = int(os.path.getmtime(os.path.join(app.static_folder, arq)))
+            except OSError:
+                _versoes[arq] = 0
+        values["v"] = _versoes[arq]
 
 db.init_db()
 
@@ -29,7 +52,23 @@ db.init_db()
 # demais before_request para que todas as consultas da página usem a mesma conexão.
 @app.before_request
 def _abrir_conexao():
+    g._inicio = time.perf_counter()
+    db.iniciar_medicao()
     db.iniciar_requisicao()
+
+
+@app.after_request
+def _medir_tempo(resp):
+    """Server-Timing (visível no navegador: F12 > Rede > Tempo) e registro das páginas lentas no log."""
+    if request.endpoint == "static" or not hasattr(g, "_inicio"):
+        return resp
+    total = (time.perf_counter() - g._inicio) * 1000
+    m = db.medicao() or {"consultas": 0, "segundos": 0}
+    banco = m["segundos"] * 1000
+    resp.headers["Server-Timing"] = f'total;dur={total:.0f}, db;dur={banco:.0f};desc="{m["consultas"]} consultas"'
+    if total >= LIMITE_LENTO_MS:
+        log.info("LENTO %s %s %.0f ms (banco %.0f ms, %d consultas)", request.method, request.path, total, banco, m["consultas"])
+    return resp
 
 
 @app.teardown_request
@@ -171,11 +210,14 @@ def antes():
         return redirect(url_for("trocar_senha"))
 
 
+TEM_LOGO = os.path.exists(os.path.join(app.static_folder, "img", "logo.png"))
+
+
 @app.context_processor
 def injetar():
     if "csrf" not in session:
         session["csrf"] = secrets.token_hex(16)
-    return {"csrf_token": session["csrf"], "usuario": usuario_atual(),
+    return {"csrf_token": session["csrf"], "usuario": usuario_atual(), "tem_logo": TEM_LOGO,
             "MODALIDADES": ciclos.MODALIDADES, "NIVEIS": ciclos.NIVEIS, "NIVEIS_VOLUME": ciclos.NIVEIS_VOLUME}
 
 
@@ -245,11 +287,11 @@ def trocar_senha(user):
 @login_obrigatorio("instrutor")
 def painel_instrutor(user):
     total = db.query_one(
-        "SELECT COUNT(*) AS n FROM usuarios WHERE perfil = 'aluno' AND ativo = 1 AND instrutor_id = ?",
-        (user["id"],))["n"]
+        f"SELECT COUNT(*) AS n FROM usuarios u WHERE u.perfil = 'aluno' AND u.ativo = 1 AND {sql_acesso()}",
+        params_acesso(user["id"]))["n"]
     total_macros = db.query_one(
         "SELECT COUNT(*) AS n FROM macrociclos m JOIN usuarios u ON u.id = m.aluno_id "
-        "WHERE u.instrutor_id = ? AND u.ativo = 1", (user["id"],))["n"]
+        f"WHERE {sql_acesso()} AND u.ativo = 1", params_acesso(user["id"]))["n"]
     return render_template("painel_instrutor.html", total_alunos=total, total_macros=total_macros)
 
 
@@ -267,8 +309,8 @@ def perfil_corrida(aluno):
 
 def _aluno_do_instrutor(aluno_id, instrutor_id):
     aluno = db.query_one(
-        "SELECT * FROM usuarios WHERE id = ? AND perfil = 'aluno' AND instrutor_id = ?",
-        (aluno_id, instrutor_id))
+        f"SELECT * FROM usuarios u WHERE u.id = ? AND u.perfil = 'aluno' AND {sql_acesso()}",
+        (aluno_id, *params_acesso(instrutor_id)))
     if not aluno:
         abort(404)
     return aluno
@@ -323,10 +365,10 @@ def _validar_aluno(form, aluno_id=None):
 @login_obrigatorio("instrutor")
 def alunos(user):
     mostrar = request.args.get("mostrar", "ativos")
-    filtro = "" if mostrar == "todos" else "AND ativo = 1"
+    filtro = "" if mostrar == "todos" else "AND u.ativo = 1"
     lista = db.query_all(
-        f"SELECT * FROM usuarios WHERE perfil = 'aluno' AND instrutor_id = ? {filtro} ORDER BY nome",
-        (user["id"],))
+        f"SELECT * FROM usuarios u WHERE u.perfil = 'aluno' AND {sql_acesso()} {filtro} ORDER BY u.nome",
+        params_acesso(user["id"]))
     for a in lista:
         a["idade"] = idade(a["data_nascimento"])
     return render_template("alunos.html", alunos=lista, mostrar=mostrar)
@@ -382,7 +424,8 @@ def aluno_editar(user, aluno_id):
     avaliacoes = db.query_all("SELECT * FROM avaliacoes WHERE aluno_id = ? ORDER BY data DESC, id DESC", (aluno_id,))
     return render_template("aluno_form.html", aluno=aluno, novo=False, provas=PROVAS_SUGERIDAS,
                            senha_min=SENHA_MIN, macros=macros, avaliacoes=avaliacoes,
-                           perfil=perfil_corrida(aluno), d=daniels, hoje=date.today().isoformat())
+                           perfil=perfil_corrida(aluno), d=daniels, hoje=date.today().isoformat(),
+                           professores_aluno=vinculos.professores_do_aluno(aluno_id))
 
 
 @app.route("/instrutor/alunos/<int:aluno_id>/avaliacoes", methods=["POST"])
@@ -435,7 +478,7 @@ def avaliacao_nova(user, aluno_id):
 @login_obrigatorio("instrutor")
 def avaliacao_excluir(user, aval_id):
     aval = db.query_one("SELECT a.* FROM avaliacoes a JOIN usuarios u ON u.id = a.aluno_id "
-                        "WHERE a.id = ? AND u.instrutor_id = ?", (aval_id, user["id"]))
+                        f"WHERE a.id = ? AND {sql_acesso()}", (aval_id, *params_acesso(user["id"])))
     if not aval:
         abort(404)
     db.execute("DELETE FROM avaliacoes WHERE id = ?", (aval_id,))
@@ -468,7 +511,7 @@ def aluno_status(user, aluno_id):
 def _macro_do_instrutor(macro_id, instrutor_id):
     macro = db.query_one(
         "SELECT m.*, u.nome AS aluno_nome FROM macrociclos m JOIN usuarios u ON u.id = m.aluno_id "
-        "WHERE m.id = ? AND u.instrutor_id = ?", (macro_id, instrutor_id))
+        f"WHERE m.id = ? AND {sql_acesso()}", (macro_id, *params_acesso(instrutor_id)))
     if not macro:
         abort(404)
     return macro
@@ -477,8 +520,8 @@ def _macro_do_instrutor(macro_id, instrutor_id):
 def _fase_do_instrutor(fase_id, instrutor_id):
     fase = db.query_one(
         "SELECT f.* FROM fases f JOIN macrociclos m ON m.id = f.macrociclo_id "
-        "JOIN usuarios u ON u.id = m.aluno_id WHERE f.id = ? AND u.instrutor_id = ?",
-        (fase_id, instrutor_id))
+        f"JOIN usuarios u ON u.id = m.aluno_id WHERE f.id = ? AND {sql_acesso()}",
+        (fase_id, *params_acesso(instrutor_id)))
     if not fase:
         abort(404)
     return fase
@@ -834,7 +877,7 @@ def _montar_semana(macro, n):
 def _treino_do_instrutor(treino_id, instrutor_id):
     t = db.query_one(
         "SELECT t.id FROM treinos t JOIN macrociclos m ON m.id = t.macrociclo_id "
-        "JOIN usuarios u ON u.id = m.aluno_id WHERE t.id = ? AND u.instrutor_id = ?", (treino_id, instrutor_id))
+        f"JOIN usuarios u ON u.id = m.aluno_id WHERE t.id = ? AND {sql_acesso()}", (treino_id, *params_acesso(instrutor_id)))
     if not t:
         abort(404)
     return treinos.um(treino_id)

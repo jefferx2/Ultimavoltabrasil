@@ -1,6 +1,32 @@
 {% extends "base.html" %}
-{% block titulo %}{{ 'Novo professor' if novo else prof.nome }} · Última Volta Brasil{% endblock %}
+{% block titulo %}{{ 'Novo professor' if novo else prof.nome }} · Última Volta Brasil<script>
+document.querySelectorAll('[data-filtro]').forEach(f => f.addEventListener('input', () => {
+  const t = f.value.trim().toLowerCase();
+  f.closest('.escolha-alunos').querySelectorAll('.item-aluno').forEach(l => l.hidden = t && !l.dataset.nome.includes(t));
+}));
+</script>
+{% endblock %}
 {% block conteudo %}
+{% macro escolher_alunos(alunos, marcados) %}
+  {% if alunos %}
+  <div class="escolha-alunos">
+    <input type="search" class="filtro-alunos" placeholder="Filtrar por nome" aria-label="Filtrar alunos" data-filtro>
+    <div class="lista-escolha">
+      {% for a in alunos %}
+      <label class="check item-aluno" data-nome="{{ a.nome | lower }}">
+        <input type="checkbox" name="aluno_ids" value="{{ a.id }}" {{ 'checked' if a.id in marcados }}>
+        <span><b>{{ a.nome }}</b>
+          <small>{% if a.professores %}com {{ a.professores | map(attribute='nome') | join(', ') }}{% else %}sem professor{% endif %}</small></span>
+      </label>
+      {% endfor %}
+    </div>
+  </div>
+  <div class="modo-alunos">
+    <label class="opcao"><input type="radio" name="modo" value="vincular" checked> Vincular <small>o aluno continua com os professores atuais</small></label>
+    <label class="opcao"><input type="radio" name="modo" value="transferir"> Transferir <small>este passa a ser o único professor</small></label>
+  </div>
+  {% else %}<p class="nota">Não há outros alunos ativos para escolher.</p>{% endif %}
+{% endmacro %}
 <section class="painel painel-estreito">
   <p class="sobretitulo"><a href="{{ url_for('professores') }}">← Professores</a></p>
   <h1>{{ 'Novo professor' if novo else prof.nome }}</h1>
@@ -13,6 +39,10 @@
       <label class="col-2 check"><input type="checkbox" name="admin" value="1" {{ 'checked' if prof.admin }}>
         Administrador: também pode cadastrar e gerenciar professores</label>
       {% if novo %}
+      <fieldset class="col-2 caixa-opcoes">
+        <legend>Alunos deste professor (opcional)</legend>
+        {{ escolher_alunos(todos_alunos, marcados) }}
+      </fieldset>
       <label class="col-2">Senha inicial
         <input name="senha" minlength="{{ senha_min }}" placeholder="Deixe em branco para gerar automaticamente">
         <small>O professor será obrigado a trocar no primeiro acesso.</small>
@@ -26,13 +56,26 @@
   </form>
 
   {% if not novo %}
-  <div class="zona">
+  <div class="zona" id="alunos">
     <h2>Alunos ({{ alunos | length }})</h2>
     {% if alunos %}
-      <p class="nota">{% for a in alunos %}{{ a.nome }}{{ ' (inativo)' if not a.ativo }}{{ ', ' if not loop.last }}{% endfor %}</p>
+      <ul class="lista-simples lista-vinc">
+        {% for a in alunos %}
+        <li>
+          <div><b>{{ a.nome }}</b>{{ ' (inativo)' if not a.ativo }}
+            {% if a.principal %}<span class="selo selo-verde">Principal</span>{% endif %}
+            <span>{% if a.outros %}também com {{ a.outros | map(attribute='nome') | join(', ') }}{% else %}só com este professor{% endif %}</span></div>
+          <form method="post" action="{{ url_for('professor_desvincular', prof_id=prof.id, aluno_id=a.id) }}"
+                onsubmit="return confirm('Desvincular este aluno deste professor?')">
+            <input type="hidden" name="csrf" value="{{ csrf_token }}">
+            <button class="link-btn" type="submit" {{ 'disabled title="É o único professor do aluno"' if not a.outros }}>Desvincular</button>
+          </form>
+        </li>
+        {% endfor %}
+      </ul>
       {% if not eu %}
       <div class="zona-linha">
-        <div><b>Transferir alunos</b><p>Passa todos os alunos deste professor, com ciclos e histórico, para outro professor.</p></div>
+        <div><b>Passar todos os alunos para outro professor</b><p>Troca este professor por outro em todos os alunos dele, com ciclos e histórico. Os demais professores de cada aluno continuam.</p></div>
         <form method="post" action="{{ url_for('professor_transferir', prof_id=prof.id) }}" class="form-linha"
               onsubmit="return confirm('Transferir todos os alunos deste professor?')">
           <input type="hidden" name="csrf" value="{{ csrf_token }}">
@@ -45,6 +88,13 @@
       </div>
       {% endif %}
     {% else %}<p class="nota">Nenhum aluno.</p>{% endif %}
+
+    <h3 class="sec-peq">Acrescentar alunos</h3>
+    <form method="post" action="{{ url_for('professor_alunos', prof_id=prof.id) }}" class="form">
+      <input type="hidden" name="csrf" value="{{ csrf_token }}">
+      {{ escolher_alunos(todos_alunos, marcados) }}
+      {% if todos_alunos %}<button class="btn btn-peq" type="submit">Aplicar aos alunos marcados</button>{% endif %}
+    </form>
   </div>
 
   {% if not eu %}
@@ -70,4 +120,10 @@
   {% endif %}
   {% endif %}
 </section>
+<script>
+document.querySelectorAll('[data-filtro]').forEach(f => f.addEventListener('input', () => {
+  const t = f.value.trim().toLowerCase();
+  f.closest('.escolha-alunos').querySelectorAll('.item-aluno').forEach(l => l.hidden = t && !l.dataset.nome.includes(t));
+}));
+</script>
 {% endblock %}

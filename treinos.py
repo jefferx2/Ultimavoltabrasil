@@ -4,6 +4,7 @@ from datetime import date, timedelta
 
 import daniels
 import db
+from vinculos import params_acesso, sql_acesso
 
 TIPOS_CORRIDA = ["Aquecimento", "Educativos", "Rodagem", "Regenerativo", "Longão", "Progressivo", "Fartlek",
                  "Limiar", "Intervalado", "Tiros", "Ritmo de prova", "Subidas", "Desaquecimento"]
@@ -290,7 +291,7 @@ def exercicios_usados(instrutor_id):
     return [r["exercicio"] for r in db.query_all(
         "SELECT DISTINCT a.exercicio FROM treino_academia a JOIN treinos t ON t.id = a.treino_id "
         "JOIN macrociclos m ON m.id = t.macrociclo_id JOIN usuarios u ON u.id = m.aluno_id "
-        "WHERE u.instrutor_id = ? ORDER BY a.exercicio", (instrutor_id,))]
+        f"WHERE {sql_acesso()} ORDER BY a.exercicio", params_acesso(instrutor_id))]
 
 
 # ---------------------------------------------------------------- formulário

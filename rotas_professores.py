@@ -3,7 +3,35 @@ from flask import abort, flash, redirect, render_template, request, url_for
 from werkzeug.security import generate_password_hash
 
 import db
+import vinculos
 from app import EMAIL_RE, SENHA_MIN, admin_obrigatorio, app, gerar_senha
+from vinculos import params_acesso, sql_acesso
+
+
+def _todos_alunos():
+    """Alunos ativos do sistema, com os professores de cada um (para o administrador escolher)."""
+    alunos = db.query_all("SELECT id, nome, email FROM usuarios WHERE perfil = 'aluno' AND ativo = 1 ORDER BY nome")
+    for a in alunos:
+        a["professores"] = vinculos.professores_do_aluno(a["id"])
+    return alunos
+
+
+def _aplicar_alunos(prof_id, form):
+    """Vincula ou transfere os alunos marcados no formulário. Devolve a mensagem do resultado."""
+    ids = [int(x) for x in form.getlist("aluno_ids") if x.isdigit()]
+    validos = {a["id"] for a in db.query_all("SELECT id FROM usuarios WHERE perfil = 'aluno'")}
+    ids = [i for i in ids if i in validos]
+    if not ids:
+        return None
+    modo = form.get("modo")
+    for aid in ids:
+        if modo == "transferir":
+            vinculos.transferir(aid, prof_id)
+        else:
+            vinculos.vincular(aid, prof_id)
+    n = len(ids)
+    return (f"{n} aluno{'s' if n != 1 else ''} " +
+            ("transferido" + ("s" if n != 1 else "") if modo == "transferir" else "vinculado" + ("s" if n != 1 else "")) + ".")
 
 
 def _professor(prof_id):
@@ -32,7 +60,8 @@ def _validar(form, prof_id=None):
 @admin_obrigatorio
 def professores(user):
     lista = db.query_all(
-        "SELECT p.*, (SELECT COUNT(*) FROM usuarios a WHERE a.instrutor_id = p.id AND a.perfil = 'aluno' AND a.ativo = 1) "
+        "SELECT p.*, (SELECT COUNT(*) FROM usuarios a WHERE a.perfil = 'aluno' AND a.ativo = 1 AND "
+        "(a.instrutor_id = p.id OR EXISTS (SELECT 1 FROM vinculos v WHERE v.aluno_id = a.id AND v.professor_id = p.id))) "
         "AS alunos FROM usuarios p WHERE p.perfil = 'instrutor' ORDER BY p.ativo DESC, p.nome")
     return render_template("professores.html", professores=lista)
 
@@ -50,13 +79,17 @@ def professor_novo(user):
             for e in erros:
                 flash(e, "erro")
         else:
-            db.execute("INSERT INTO usuarios (nome, email, senha_hash, perfil, telefone, admin, trocar_senha) "
-                       "VALUES (?, ?, ?, 'instrutor', ?, ?, 1)",
-                       (dados["nome"], dados["email"], generate_password_hash(senha), dados["telefone"], dados["admin"]))
+            novo_id = db.insert("INSERT INTO usuarios (nome, email, senha_hash, perfil, telefone, admin, trocar_senha) "
+                                "VALUES (?, ?, ?, 'instrutor', ?, ?, 1)",
+                                (dados["nome"], dados["email"], generate_password_hash(senha), dados["telefone"], dados["admin"]))
+            msg = _aplicar_alunos(novo_id, request.form)
+            if msg:
+                flash(msg, "ok")
             return render_template("aluno_acesso.html", nome=dados["nome"], email=dados["email"], senha=senha,
-                                   titulo="Professor cadastrado", voltar=url_for("professores"),
-                                   voltar_txt="Voltar aos professores")
-    return render_template("professor_form.html", prof=dados, novo=True, senha_min=SENHA_MIN)
+                                   titulo="Professor cadastrado", voltar=url_for("professor_editar", prof_id=novo_id),
+                                   voltar_txt="Ver o professor")
+    return render_template("professor_form.html", prof=dados, novo=True, senha_min=SENHA_MIN,
+                           todos_alunos=_todos_alunos(), marcados={int(x) for x in request.form.getlist("aluno_ids") if x.isdigit()})
 
 
 @app.route("/instrutor/professores/<int:prof_id>", methods=["GET", "POST"])
@@ -76,10 +109,59 @@ def professor_editar(user, prof_id):
                        (dados["nome"], dados["email"], dados["telefone"], dados["admin"], prof_id))
             flash("Dados do professor salvos.", "ok")
             return redirect(url_for("professores"))
-    alunos = db.query_all("SELECT id, nome, ativo FROM usuarios WHERE instrutor_id = ? AND perfil = 'aluno' ORDER BY nome",
-                          (prof_id,))
+    alunos = db.query_all(f"SELECT u.id, u.nome, u.ativo, u.instrutor_id FROM usuarios u WHERE u.perfil = 'aluno' "
+                          f"AND {sql_acesso()} ORDER BY u.nome", params_acesso(prof_id))
+    for a in alunos:
+        a["principal"] = a["instrutor_id"] == prof_id
+        a["outros"] = [p for p in vinculos.professores_do_aluno(a["id"]) if p["id"] != prof_id]
+    ids = {a["id"] for a in alunos}
     return render_template("professor_form.html", prof=prof, novo=False, senha_min=SENHA_MIN, alunos=alunos,
-                           eu=prof_id == user["id"])
+                           eu=prof_id == user["id"], todos_alunos=[a for a in _todos_alunos() if a["id"] not in ids],
+                           marcados=set())
+
+
+@app.route("/instrutor/professores/<int:prof_id>/alunos", methods=["POST"])
+@admin_obrigatorio
+def professor_alunos(user, prof_id):
+    """Vincula (acrescenta) ou transfere (passa a ser o único professor) os alunos marcados."""
+    _professor(prof_id)
+    msg = _aplicar_alunos(prof_id, request.form)
+    flash(msg or "Marque pelo menos um aluno.", "ok" if msg else "erro")
+    return redirect(url_for("professor_editar", prof_id=prof_id) + "#alunos")
+
+
+@app.route("/instrutor/professores/<int:prof_id>/alunos/<int:aluno_id>/remover", methods=["POST"])
+@admin_obrigatorio
+def professor_desvincular(user, prof_id, aluno_id):
+    _professor(prof_id)
+    erro = vinculos.desvincular(aluno_id, prof_id)
+    flash(erro or "Aluno desvinculado deste professor.", "erro" if erro else "ok")
+    destino = request.form.get("voltar")
+    if destino == "aluno":
+        return redirect(url_for("aluno_editar", aluno_id=aluno_id) + "#professores")
+    return redirect(url_for("professor_editar", prof_id=prof_id) + "#alunos")
+
+
+@app.route("/instrutor/alunos/<int:aluno_id>/professores", methods=["POST"])
+@admin_obrigatorio
+def aluno_vincular_professor(user, aluno_id):
+    """Na ficha do aluno: acrescentar um professor."""
+    if not db.query_one("SELECT id FROM usuarios WHERE id = ? AND perfil = 'aluno'", (aluno_id,)):
+        abort(404)
+    try:
+        prof_id = int(request.form.get("professor_id", ""))
+    except ValueError:
+        prof_id = 0
+    if not db.query_one("SELECT id FROM usuarios WHERE id = ? AND perfil = 'instrutor' AND ativo = 1", (prof_id,)):
+        flash("Escolha um professor ativo.", "erro")
+    elif request.form.get("modo") == "transferir":
+        vinculos.transferir(aluno_id, prof_id)
+        flash("Aluno transferido: agora tem só esse professor.", "ok")
+    else:
+        flash("Professor vinculado ao aluno." if vinculos.vincular(aluno_id, prof_id) else "Esse professor já acompanha o aluno.", "ok")
+    if prof_id and prof_id != user["id"] and request.form.get("modo") == "transferir":
+        return redirect(url_for("alunos"))   # o administrador pode ter perdido o acesso a esse aluno
+    return redirect(url_for("aluno_editar", aluno_id=aluno_id) + "#professores")
 
 
 @app.route("/instrutor/professores/<int:prof_id>/redefinir-senha", methods=["POST"])
@@ -111,7 +193,7 @@ def professor_status(user, prof_id):
 @app.route("/instrutor/professores/<int:prof_id>/transferir", methods=["POST"])
 @admin_obrigatorio
 def professor_transferir(user, prof_id):
-    """Passa todos os alunos deste professor para outro (ex.: antes de desativá-lo)."""
+    """Passa os alunos deste professor para outro (ex.: antes de desativá-lo); os demais professores de cada aluno ficam."""
     _professor(prof_id)
     try:
         destino = int(request.form.get("destino", ""))
@@ -121,8 +203,7 @@ def professor_transferir(user, prof_id):
     if not alvo or destino == prof_id:
         flash("Escolha um professor ativo para receber os alunos.", "erro")
     else:
-        n = db.query_one("SELECT COUNT(*) AS n FROM usuarios WHERE instrutor_id = ? AND perfil = 'aluno'", (prof_id,))["n"]
-        db.execute("UPDATE usuarios SET instrutor_id = ? WHERE instrutor_id = ? AND perfil = 'aluno'", (destino, prof_id))
+        n = vinculos.substituir(prof_id, destino)
         flash(f"{n} aluno{'s' if n != 1 else ''} transferido{'s' if n != 1 else ''} para {alvo['nome']}.", "ok")
     return redirect(url_for("professor_editar", prof_id=prof_id))
 

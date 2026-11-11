@@ -12,6 +12,7 @@ consultar o banco e devolvida ao pool no fim), em vez de abrir uma conexão por 
 import atexit
 import contextvars
 import os
+import time
 import sqlite3
 from contextlib import contextmanager
 
@@ -28,6 +29,22 @@ if IS_PG:
 _pool = None
 _requisicao = contextvars.ContextVar("db_requisicao", default=None)
 estatistica = {"conexoes": 0, "consultas": 0}   # usado nos testes de desempenho
+_medicao = contextvars.ContextVar("db_medicao", default=None)   # tempo no banco da requisição atual
+
+
+def iniciar_medicao():
+    _medicao.set({"consultas": 0, "segundos": 0.0})
+
+
+def medicao():
+    return _medicao.get()
+
+
+def _medir(inicio):
+    m = _medicao.get()
+    if m is not None:
+        m["consultas"] += 1
+        m["segundos"] += time.perf_counter() - inicio
 
 
 def _sql(query):
@@ -86,8 +103,12 @@ class _Requisicao:
 
     def obter(self):
         if self.conn is None:
+            t0 = time.perf_counter()
             self.cm = _conexao_nova()
             self.conn = self.cm.__enter__()
+            m = _medicao.get()
+            if m is not None:
+                m["segundos"] += time.perf_counter() - t0
         return self.conn
 
     def fechar(self, erro=None):
@@ -122,22 +143,29 @@ def _conexao():
 
 def query_one(query, params=()):
     estatistica["consultas"] += 1
+    t0 = time.perf_counter()
     with _conexao() as conn:
         row = conn.execute(_sql(query), params).fetchone()
-        return dict(row) if row else None
+    _medir(t0)
+    return dict(row) if row else None
 
 
 def query_all(query, params=()):
     estatistica["consultas"] += 1
+    t0 = time.perf_counter()
     with _conexao() as conn:
-        return [dict(r) for r in conn.execute(_sql(query), params).fetchall()]
+        linhas = [dict(r) for r in conn.execute(_sql(query), params).fetchall()]
+    _medir(t0)
+    return linhas
 
 
 def execute(query, params=()):
     estatistica["consultas"] += 1
+    t0 = time.perf_counter()
     with _conexao() as conn:
         conn.execute(_sql(query), params)
         conn.commit()
+    _medir(t0)
 
 
 class Transacao:
@@ -166,17 +194,26 @@ class Transacao:
 
     def execute(self, query, params=()):
         estatistica["consultas"] += 1
+        t0 = time.perf_counter()
         self.conn.execute(_sql(query), params)
+        _medir(t0)
 
     def query_all(self, query, params=()):
         estatistica["consultas"] += 1
-        return [dict(r) for r in self.conn.execute(_sql(query), params).fetchall()]
+        t0 = time.perf_counter()
+        linhas = [dict(r) for r in self.conn.execute(_sql(query), params).fetchall()]
+        _medir(t0)
+        return linhas
 
     def insert(self, query, params=()):
         estatistica["consultas"] += 1
+        t0 = time.perf_counter()
         if IS_PG:
-            return self.conn.execute(_sql(query) + " RETURNING id", params).fetchone()["id"]
-        return self.conn.execute(query, params).lastrowid
+            novo = self.conn.execute(_sql(query) + " RETURNING id", params).fetchone()["id"]
+        else:
+            novo = self.conn.execute(query, params).lastrowid
+        _medir(t0)
+        return novo
 
 
 def insert(query, params=()):
@@ -302,6 +339,12 @@ CREATE TABLE IF NOT EXISTS registro_series (
 );
 CREATE INDEX IF NOT EXISTS ix_regc_item ON registro_corrida(item_id);
 CREATE INDEX IF NOT EXISTS ix_regs_item ON registro_series(item_id);
+CREATE TABLE IF NOT EXISTS vinculos (
+    aluno_id INTEGER NOT NULL REFERENCES usuarios(id) ON DELETE CASCADE,
+    professor_id INTEGER NOT NULL REFERENCES usuarios(id) ON DELETE CASCADE,
+    PRIMARY KEY (aluno_id, professor_id)
+);
+CREATE INDEX IF NOT EXISTS ix_vinc_prof ON vinculos(professor_id);
 """
 
 SCHEMA_PG = """
@@ -419,10 +462,16 @@ CREATE TABLE IF NOT EXISTS registro_series (
 );
 CREATE INDEX IF NOT EXISTS ix_regc_item ON registro_corrida(item_id);
 CREATE INDEX IF NOT EXISTS ix_regs_item ON registro_series(item_id);
+CREATE TABLE IF NOT EXISTS vinculos (
+    aluno_id INTEGER NOT NULL REFERENCES usuarios(id) ON DELETE CASCADE,
+    professor_id INTEGER NOT NULL REFERENCES usuarios(id) ON DELETE CASCADE,
+    PRIMARY KEY (aluno_id, professor_id)
+);
+CREATE INDEX IF NOT EXISTS ix_vinc_prof ON vinculos(professor_id);
 """
 
 TABELAS = ("usuarios", "macrociclos", "fases", "treinos", "treino_academia", "treino_corrida", "avaliacoes",
-           "registros", "registro_corrida", "registro_series")
+           "registros", "registro_corrida", "registro_series", "vinculos")
 
 # O app acessa direto pelo Postgres; a API pública do Supabase fica bloqueada.
 RLS_PG = "".join(f"""

@@ -74,6 +74,37 @@
   </form>
 
   {% if not novo %}
+  <div class="zona" id="professores">
+    <h2>Professores</h2>
+    <ul class="lista-simples lista-vinc">
+      {% for p in professores_aluno %}
+      <li>
+        <div><b>{{ p.nome }}</b>{{ ' (inativo)' if not p.ativo }}{% if p.principal %} <span class="selo selo-verde">Principal</span>{% endif %}{% if p.id == usuario.id %} <small class="mudo">(você)</small>{% endif %}</div>
+        {% if usuario.admin and professores_aluno | length > 1 %}
+        <form method="post" action="{{ url_for('professor_desvincular', prof_id=p.id, aluno_id=aluno.id) }}"
+              onsubmit="return confirm('Desvincular este professor do aluno?')">
+          <input type="hidden" name="csrf" value="{{ csrf_token }}"><input type="hidden" name="voltar" value="aluno">
+          <button class="link-btn" type="submit">Desvincular</button>
+        </form>
+        {% endif %}
+      </li>
+      {% endfor %}
+    </ul>
+    {% if usuario.admin %}
+    {% set ids = professores_aluno | map(attribute='id') | list %}
+    <form method="post" action="{{ url_for('aluno_vincular_professor', aluno_id=aluno.id) }}" class="form-linha form-vinc">
+      <input type="hidden" name="csrf" value="{{ csrf_token }}">
+      <select name="professor_id" required>
+        <option value="">Escolha um professor…</option>
+        {% for p in outros_professores(0) %}<option value="{{ p.id }}" {{ 'disabled' if p.id in ids }}>{{ p.nome }}{{ ' (já vinculado)' if p.id in ids }}</option>{% endfor %}
+      </select>
+      <select name="modo"><option value="vincular">Vincular (mantém os atuais)</option><option value="transferir">Transferir (passa a ser o único)</option></select>
+      <button class="btn btn-contorno btn-peq" type="submit">Aplicar</button>
+    </form>
+    {% endif %}
+    <p class="nota">Todos os professores vinculados veem a ficha, montam treinos e acompanham o aluno.</p>
+  </div>
+
   <div class="zona" id="daniels">
     <h2>Ritmos de treino (VDOT)</h2>
     {% if perfil.vdot %}

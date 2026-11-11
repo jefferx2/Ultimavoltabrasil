@@ -8,6 +8,7 @@ import daniels
 import db
 import registros
 import treinos
+from vinculos import params_acesso, sql_acesso
 from app import _aluno_do_instrutor, _aluno_por_id, _macro_vigente, app, login_obrigatorio, perfil_corrida
 
 
@@ -62,7 +63,7 @@ def registro_treino(user, treino_id):
 @login_obrigatorio("instrutor")
 def registro_ver(user, treino_id):
     t = db.query_one("SELECT t.id, m.aluno_id FROM treinos t JOIN macrociclos m ON m.id = t.macrociclo_id "
-                     "JOIN usuarios u ON u.id = m.aluno_id WHERE t.id = ? AND u.instrutor_id = ?", (treino_id, user["id"]))
+                     f"JOIN usuarios u ON u.id = m.aluno_id WHERE t.id = ? AND {sql_acesso()}", (treino_id, *params_acesso(user["id"])))
     if not t:
         abort(404)
     treino = treinos.um(treino_id)
@@ -89,8 +90,8 @@ def _alertas(r7, semanas):
 @app.route("/instrutor/acompanhamento")
 @login_obrigatorio("instrutor")
 def acompanhamento(user):
-    alunos = db.query_all("SELECT * FROM usuarios WHERE instrutor_id = ? AND perfil = 'aluno' AND ativo = 1 ORDER BY nome",
-                          (user["id"],))
+    alunos = db.query_all(f"SELECT * FROM usuarios u WHERE {sql_acesso()} AND u.perfil = 'aluno' AND u.ativo = 1 ORDER BY u.nome",
+                          params_acesso(user["id"]))
     hoje = date.today()
     todas = registros.sessoes([a["id"] for a in alunos], hoje - timedelta(weeks=8), hoje + timedelta(days=6))
     linhas = []
