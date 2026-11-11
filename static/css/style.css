@@ -491,18 +491,3 @@ input.pace-auto { background: #f6fbf7; }
 .leg-real { border-top: 3px solid #2f8f5b !important; }
 .form-registro input::placeholder { color: #b9bec4; font-style: italic; }
 .usar-sugestao { margin: -2px 0 10px; }
-
-/* ---- vínculos aluno ↔ professores ---- */
-.escolha-alunos { display: grid; gap: 8px; }
-.filtro-alunos { padding: 8px 10px; border: 1px solid var(--borda); border-radius: 4px; font: inherit; max-width: 320px; }
-.lista-escolha { max-height: 260px; overflow-y: auto; border: 1px solid var(--borda); border-radius: 6px; padding: 4px 10px; background: #fff; }
-.item-aluno { padding: 7px 0; border-bottom: 1px solid #f0eeed; }
-.item-aluno:last-child { border-bottom: 0; }
-.item-aluno span { display: grid; }
-.item-aluno small { color: var(--cinza); font-weight: 400; }
-.modo-alunos { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0; }
-.modo-alunos small { color: var(--cinza); font-weight: 400; }
-.lista-vinc li { display: flex; justify-content: space-between; align-items: center; gap: 12px; grid-template-columns: none; }
-.lista-vinc li > div { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: baseline; }
-.link-btn:disabled { opacity: .4; cursor: not-allowed; text-decoration: none; }
-.form-vinc { flex-wrap: wrap; margin-top: 10px; }

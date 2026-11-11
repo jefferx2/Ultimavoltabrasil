@@ -43,3 +43,10 @@ ExecStart=/opt/ultimavolta/venv/bin/gunicorn -w 2 -b 127.0.0.1:<PORTA> app:app
   Pela linha de comando: `flask --app app criar-usuario --admin`.
 - O aluno registra cada treino em "Treinos da semana" → "Registrar treino" (`rotas_acompanhamento.py`,
   `registros.py`). O professor acompanha em "Acompanhamento".
+
+## Velocidade
+- Fontes servidas pelo próprio site (`static/fonts`, licença OFL) — sem chamadas ao Google.
+- Arquivos estáticos com cache de 1 ano; a URL leva a versão (`?v=`), então mudanças chegam na hora.
+- Cada resposta traz o cabeçalho `Server-Timing` (F12 > Rede > Tempo): tempo total, tempo no banco e nº de consultas.
+- Páginas acima de `LIMITE_LENTO_MS` (padrão 500 ms) vão para o log: `journalctl -u ultimavolta | grep LENTO`.
+- Gunicorn com threads: `--worker-class gthread --threads 4 -w 2`.

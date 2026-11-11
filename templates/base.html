@@ -4,8 +4,8 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block titulo %}Última Volta Brasil{% endblock %}</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;800&family=Barlow:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="preload" href="{{ url_for('static', filename='fonts/barlow-latin-400-normal.woff2') }}" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="{{ url_for('static', filename='fonts/barlow-condensed-latin-800-normal.woff2') }}" as="font" type="font/woff2" crossorigin>
   <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
   {% block head_extra %}{% endblock %}
 </head>
@@ -13,7 +13,7 @@
   {% block topo %}
   <header class="topo">
     <a class="marca" href="{{ url_for('home') }}">
-      <img src="{{ url_for('static', filename='img/logo.png') }}" alt="" onerror="this.remove()">
+      {% if tem_logo %}<img src="{{ url_for('static', filename='img/logo.png') }}" alt="">{% endif %}
       <span>ÚLTIMA VOLTA <b>BRASIL</b></span>
     </a>
     <nav>
