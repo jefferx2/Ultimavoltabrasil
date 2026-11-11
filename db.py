@@ -339,6 +339,12 @@ CREATE TABLE IF NOT EXISTS registro_series (
 );
 CREATE INDEX IF NOT EXISTS ix_regc_item ON registro_corrida(item_id);
 CREATE INDEX IF NOT EXISTS ix_regs_item ON registro_series(item_id);
+CREATE TABLE IF NOT EXISTS vinculos (
+    aluno_id INTEGER NOT NULL REFERENCES usuarios(id) ON DELETE CASCADE,
+    professor_id INTEGER NOT NULL REFERENCES usuarios(id) ON DELETE CASCADE,
+    PRIMARY KEY (aluno_id, professor_id)
+);
+CREATE INDEX IF NOT EXISTS ix_vinc_prof ON vinculos(professor_id);
 """
 
 SCHEMA_PG = """
@@ -456,10 +462,16 @@ CREATE TABLE IF NOT EXISTS registro_series (
 );
 CREATE INDEX IF NOT EXISTS ix_regc_item ON registro_corrida(item_id);
 CREATE INDEX IF NOT EXISTS ix_regs_item ON registro_series(item_id);
+CREATE TABLE IF NOT EXISTS vinculos (
+    aluno_id INTEGER NOT NULL REFERENCES usuarios(id) ON DELETE CASCADE,
+    professor_id INTEGER NOT NULL REFERENCES usuarios(id) ON DELETE CASCADE,
+    PRIMARY KEY (aluno_id, professor_id)
+);
+CREATE INDEX IF NOT EXISTS ix_vinc_prof ON vinculos(professor_id);
 """
 
 TABELAS = ("usuarios", "macrociclos", "fases", "treinos", "treino_academia", "treino_corrida", "avaliacoes",
-           "registros", "registro_corrida", "registro_series")
+           "registros", "registro_corrida", "registro_series", "vinculos")
 
 # O app acessa direto pelo Postgres; a API pública do Supabase fica bloqueada.
 RLS_PG = "".join(f"""
